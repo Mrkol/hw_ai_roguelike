@@ -1,0 +1,20 @@
+monster:
+  patrol:
+    - flee_from_enemy:
+        and: [enemy_near, hp_low]
+    - move_to_enemy: enemy_near
+  move_to_enemy:
+    - patrol:
+        not: enemy_near
+    - flee_from_enemy:
+        and: [enemy_near, hp_low]
+  flee_from_enemy:
+    - patrol:
+        not: enemy_near
+
+berserker:
+  patrol:
+    - move_to_enemy: enemy_near
+  move_to_enemy:
+    - patrol:
+        not: enemy_near
