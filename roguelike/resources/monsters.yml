@@ -33,7 +33,7 @@ low_player_hp_beh:
     - follow_player:
         not: ally_near
   follow_player:
-    - heal_ally: ally_hp_low
+    - heal_ally: ally_near
 
 
 healer:
