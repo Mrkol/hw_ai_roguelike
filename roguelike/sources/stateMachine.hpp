@@ -14,18 +14,25 @@
 class StateMachineTracker
 {
 public:
+
   StateMachineTracker(flecs::world& world, flecs::entity simulateAiPipeline, flecs::entity transitionPhase);
 
   void load(std::filesystem::path path);
-  void handleEvent(flecs::entity event, flecs::entity entity);
+
+  // Even dispatchers should match this component and insert
+  // events that occured into the set.
+  struct EventList
+  {
+    std::unordered_set<flecs::entity> events;
+  };
+
   void addSmToEntity(flecs::entity entity, const char* sm);
 
 private:
   flecs::world& world_;
   flecs::entity transitionPhase_;
 
-  struct EntityEvents;
-  using EventPredicate = fu2::unique_function<bool(const EntityEvents&) const>;
+  using EventPredicate = fu2::unique_function<bool(const EventList&) const>;
   EventPredicate parseEventExpression(const YAML::Node& node, std::unordered_set<flecs::entity>& trackedEvents);
 
   using StateMachineApplier = fu2::unique_function<void(flecs::entity)>;

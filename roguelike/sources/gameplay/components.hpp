@@ -37,17 +37,19 @@ struct HitpointsLowThreshold
   float hitpoints = 1.f;
 };
 
+struct HitpointsRegen
+{
+  float regenPerTurn = 10.f;
+};
+
 enum class ActionType
 {
   NOP = 0,
-  MOVE_START,
-  MOVE_LEFT = MOVE_START,
+  MOVE_LEFT,
   MOVE_RIGHT,
   MOVE_DOWN,
   MOVE_UP,
-  MOVE_END,
-  ATTACK = MOVE_END,
-  NUM
+  REGEN,
 };
 
 struct Action

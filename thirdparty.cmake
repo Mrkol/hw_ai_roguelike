@@ -3,9 +3,17 @@ cmake_minimum_required(VERSION 3.20)
 
 
 CPMAddPackage(
+    NAME fmt
+    GITHUB_REPOSITORY "fmtlib/fmt"
+    GIT_TAG 8.1.1
+)
+
+CPMAddPackage(
     NAME spdlog
     GITHUB_REPOSITORY gabime/spdlog
-    VERSION 1.9.2
+    VERSION 1.10.0
+    OPTIONS
+        "SPDLOG_FMT_EXTERNAL"
 )
 
 CPMAddPackage(

@@ -1,13 +1,9 @@
 #include "stateMachine.hpp"
 
 #include <fstream>
+
 #include "assert.hpp"
 
-
-struct StateMachineTracker::EntityEvents
-{
-  std::unordered_set<flecs::entity> events;
-};
 
 StateMachineTracker::StateMachineTracker(
   flecs::world& world, flecs::entity simulateAiPipeline, flecs::entity transitionPhase)
@@ -15,10 +11,10 @@ StateMachineTracker::StateMachineTracker(
   , transitionPhase_{transitionPhase}
 {
   auto postTransition = world_.entity().add(simulateAiPipeline).depends_on(transitionPhase);
-  world_.system<EntityEvents>()
+  world_.system<EventList>("event cache cleaner")
     .kind(postTransition)
     .each(
-      [](EntityEvents& evts)
+      [](flecs::entity e, EventList& evts)
       {
         evts.events.clear();
       });
@@ -57,12 +53,14 @@ void StateMachineTracker::load(std::filesystem::path path)
         auto tgtState = world_.entity(desc[i].begin()->first.as<std::string>().c_str());
 
         // System for transitioning
-        world_.system<EntityEvents>()
+        world_.system<EventList>(fmt::format("SM {}: {} to {} transition", sm.name(), state.name(), tgtState.name()).c_str())
           .kind(transitionPhase_)
           .term(sm, state)
+          // Hack for proper synchronization
+          .term(tgtState).optional().write()
           .each(
             [state, tgtState, sm, pred = std::move(pred)]
-            (flecs::entity e, EntityEvents& evts)
+            (flecs::entity e, EventList& evts)
             {
               if (pred(evts))
                 e.add(sm, tgtState);
@@ -70,28 +68,12 @@ void StateMachineTracker::load(std::filesystem::path path)
       }
     }
 
-    for (auto event : trackedEvents)
-    {
-      eventHandlers_.emplace(event,
-        [sm]
-        (flecs::entity event, flecs::entity entity)
-        {
-          // Not our state machine
-          if (!entity.has(sm, flecs::Wildcard))
-            return;
-
-          EntityEvents* evts = entity.get_mut<EntityEvents>();
-          NG_ASSERT(evts != nullptr);
-          evts->events.emplace(event);
-        });
-    }
-
     stateMachineAppliers_.emplace(sm,
       [sm, state = std::move(*firstState), trackedEvents = std::move(trackedEvents)]
       (flecs::entity entity)
       {
         entity.add(sm, state);
-        entity.add<EntityEvents>();
+        entity.add<EventList>();
         for (auto event : trackedEvents)
           entity.add(event);
       });
@@ -110,7 +92,7 @@ StateMachineTracker::EventPredicate StateMachineTracker::parseEventExpression(
     if (type == "not")
     {
       return
-        [cond = parseEventExpression(data, trackedEvents)](const EntityEvents& evs)
+        [cond = parseEventExpression(data, trackedEvents)](const EventList& evs)
         {
           return !cond(evs);
         };
@@ -127,7 +109,7 @@ StateMachineTracker::EventPredicate StateMachineTracker::parseEventExpression(
     if (type == "and")
     {
       return
-        [ops = std::move(operands)](const EntityEvents& evs)
+        [ops = std::move(operands)](const EventList& evs)
         {
           bool result = true;
           for (auto& op : ops)
@@ -138,7 +120,7 @@ StateMachineTracker::EventPredicate StateMachineTracker::parseEventExpression(
     else if (type == "or")
     {
       return
-        [ops = std::move(operands)](const EntityEvents& evs)
+        [ops = std::move(operands)](const EventList& evs)
         {
           bool result = false;
           for (auto& op : ops)
@@ -155,21 +137,10 @@ StateMachineTracker::EventPredicate StateMachineTracker::parseEventExpression(
     auto event = world_.entity(node.as<std::string>().c_str());
     trackedEvents.emplace(event);
     return
-      [event](const EntityEvents& evs)
+      [event](const EventList& evs)
       {
         return evs.events.contains(event);
       };
-  }
-}
-
-void StateMachineTracker::handleEvent(flecs::entity event, flecs::entity entity)
-{
-  auto[beg,end] = eventHandlers_.equal_range(event);
-  while (beg != end)
-  {
-    // NOTE: a handler might be used for multiple events
-    beg->second(event, entity);
-    ++beg;
   }
 }
 

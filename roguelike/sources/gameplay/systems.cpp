@@ -26,13 +26,19 @@ struct PerformTurn {};
 
 flecs::entity register_systems(flecs::world& world)
 {
-  world.system<Action, Position, MovePos, const MeleeDamage, const Team>()
+  world.system<Action, Position, MovePos, const MeleeDamage, const Team>("calculate movement")
     .kind<PerformTurn>()
     .each(
       [checkAttacks = world.query<const MovePos, Hitpoints, const Team>()]
       (flecs::entity entity, Action &a, Position &pos, MovePos &mpos, const MeleeDamage &dmg, const Team &team)
       {
         Position nextPos = move_pos(pos, a.action);
+        if (nextPos.v == pos.v)
+        {
+          mpos.v = nextPos.v;
+          return;
+        }
+
         bool blocked = false;
         checkAttacks.each([&](flecs::entity enemy, const MovePos &epos, Hitpoints &hp, const Team &enemy_team)
         {
@@ -51,11 +57,26 @@ flecs::entity register_systems(flecs::world& world)
           mpos.v = nextPos.v;
       });
 
-  world.system<Action, Position, const MovePos>()
+  world.system<Position, const MovePos>("perform movement")
     .kind<PerformTurn>()
-    .each([&](flecs::entity entity, Action &a, Position &pos, const MovePos &mpos)
+    .each([&](Position &pos, const MovePos &mpos)
     {
       pos.v = mpos.v;
+    });
+  
+  world.system<const Action, Hitpoints, const HitpointsRegen>("perform heal")
+    .kind<PerformTurn>()
+    .each(
+      [](const Action& act, Hitpoints& hp, const HitpointsRegen& regen)
+      {
+        if (act.action == ActionType::REGEN)
+          hp.hitpoints += regen.regenPerTurn;
+      });
+
+  world.system<Action>("clear actions")
+    .kind<PerformTurn>()
+    .each([&](Action &a)
+    {
       a.action = ActionType::NOP;
     });
 

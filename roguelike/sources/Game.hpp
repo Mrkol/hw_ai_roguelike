@@ -43,7 +43,7 @@ class Game
     smTracker_.addSmToEntity(create_monster(world_, 5, 5, 0xffee00ee), "monster");
     smTracker_.addSmToEntity(create_monster(world_, 10, -5, 0xffee00ee), "monster");
     smTracker_.addSmToEntity(create_monster(world_, -5, -5, 0xff111111), "berserker");
-    create_monster(world_, -5, 5, 0xff00ff00);
+    smTracker_.addSmToEntity(create_monster(world_, -5, 5, 0xff00ff00), "healer");
     
     create_powerup(world_, 7, 7, 10.f);
     create_powerup(world_, 10, -6, 10.f);
@@ -103,7 +103,12 @@ class Game
       });
     
     if (runAi)
+    {
+      flecs::log::set_level(1);
       world_.run_pipeline(simulateAiInfo_.simulateAiPipieline);
+      flecs::log::set_level(-1);
+      world_.run_pipeline(endOfTurnPipeline_);
+    }
   }
 
   glm::vec2 cameraPos() const

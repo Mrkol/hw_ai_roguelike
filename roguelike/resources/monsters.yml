@@ -18,3 +18,23 @@ berserker:
   move_to_enemy:
     - patrol:
         not: enemy_near
+
+healer:
+  patrol:
+    - flee_from_enemy:
+        and: [enemy_near, hp_low]
+    - move_to_enemy: enemy_near
+    - heal: hp_low
+  move_to_enemy:
+    - patrol:
+        not: enemy_near
+    - flee_from_enemy:
+        and: [enemy_near, hp_low]
+  heal:
+    - flee_from_enemy:
+        and: [enemy_near, hp_low]
+    - patrol:
+        not: hp_low
+  flee_from_enemy:
+    - heal:
+        not: enemy_near
