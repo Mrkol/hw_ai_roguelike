@@ -18,6 +18,8 @@ berserker:
   move_to_enemy:
     - patrol:
         not: enemy_near
+    - follow_player: hp_low
+  follow_player: []
 
 # Run and heal
 low_hp_beh:
