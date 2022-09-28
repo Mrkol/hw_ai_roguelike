@@ -26,6 +26,9 @@ struct PerformTurn {};
 
 flecs::entity register_systems(flecs::world& world)
 {
+  world.component<ClosestVisibleAlly>().add(flecs::Union);
+  world.component<ClosestVisibleEnemy>().add(flecs::Union);
+
   world.system<Action, Position, MovePos, const MeleeDamage, const Team>("calculate movement")
     .kind<PerformTurn>()
     .each(
@@ -64,13 +67,29 @@ flecs::entity register_systems(flecs::world& world)
       pos.v = mpos.v;
     });
   
-  world.system<const Action, Hitpoints, const HitpointsRegen>("perform heal")
+  world.system<const Action, Hitpoints, const HitpointsRegen>("perform regen")
     .kind<PerformTurn>()
     .each(
       [](const Action& act, Hitpoints& hp, const HitpointsRegen& regen)
       {
         if (act.action == ActionType::REGEN)
           hp.hitpoints += regen.regenPerTurn;
+      });
+  
+  world.system<const Action, const HitpointsRegen>("perform heal")
+    .kind<PerformTurn>()
+    .term<ClosestVisibleAlly>(flecs::Wildcard)
+    .each(
+      [](flecs::entity e, const Action& act, const HitpointsRegen& regen)
+      {
+        auto ally = e.target<ClosestVisibleAlly>();
+        if (e.has<ClosestVisibleAlly, NoVisibleEntity>() || !ally.is_alive())
+          return;
+
+        if (act.action == ActionType::HEAL && ally.has<Hitpoints>())
+        {
+          ally.get_mut<Hitpoints>()->hitpoints += regen.regenPerTurn;
+        }
       });
 
   world.system<Action>("clear actions")
@@ -115,29 +134,53 @@ flecs::entity register_systems(flecs::world& world)
       });
 
   
-  world.system<const Position, ClosestVisibleEnemy, const Team>()
+  world.system<const Position, const Visibility, const Team>()
     .kind<PerformTurn>()
+    .term<ClosestVisibleEnemy>(flecs::Wildcard).or_()
+    .term<ClosestVisibleAlly>(flecs::Wildcard).or_()
     .each(
       [qother = world.query_builder<const Position, const Team>().build()]
-      (const Position& pos1, ClosestVisibleEnemy& closest, const Team& team1)
+      (flecs::entity e, const Position& pos1, Visibility vis, const Team& team1)
       {
-        closest.pos = std::nullopt;
+        bool needsClosestEnemy = e.has<ClosestVisibleEnemy>(flecs::Wildcard);
+        bool needsClosestAlly = e.has<ClosestVisibleAlly>(flecs::Wildcard);
+        
+        float closestEnemyDist = 0;
+        float closestAllyDist = 0;
+        const auto noEntity = e.world().component<NoVisibleEntity>();
+        flecs::entity closestEnemy = noEntity;
+        flecs::entity closestAlly = noEntity;
 
         qother.each(
-          [&](const Position& pos2, const Team& team2)
+          [&](flecs::entity e2, const Position& pos2, const Team& team2)
           {
-            if (team1.team == team2.team)
+            if (e == e2)
               return;
 
-            auto distToEnemy = glm::length(glm::vec2(pos2.v - pos1.v));
-            if (distToEnemy > closest.visibility)
+            auto dist = glm::length(glm::vec2(pos2.v - pos1.v));
+            if (dist > vis.visibility)
               return;
             
-            if (closest.pos.has_value() && glm::length(glm::vec2(*closest.pos - pos1.v)) < distToEnemy)
-              return;
+            if (needsClosestEnemy && team1.team != team2.team
+              && (closestEnemy == noEntity || dist < closestEnemyDist))
+            {
+              closestEnemyDist = dist;
+              closestEnemy = e2;
+            }
             
-            closest.pos = pos2.v;
+            if (needsClosestAlly && team1.team == team2.team
+              && (closestAlly == noEntity || dist < closestAllyDist))
+            {
+              closestAllyDist = dist;
+              closestAlly = e2;
+            }
           });
+
+        if (needsClosestAlly)
+          e.add<ClosestVisibleAlly>(closestAlly);
+
+        if (needsClosestEnemy)
+          e.add<ClosestVisibleEnemy>(closestEnemy);
       });
 
   return world.pipeline()

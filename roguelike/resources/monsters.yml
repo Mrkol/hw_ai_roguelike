@@ -19,22 +19,68 @@ berserker:
     - patrol:
         not: enemy_near
 
-healer:
-  patrol:
-    - flee_from_enemy:
-        and: [enemy_near, hp_low]
-    - move_to_enemy: enemy_near
-    - heal: hp_low
-  move_to_enemy:
-    - patrol:
-        not: enemy_near
-    - flee_from_enemy:
-        and: [enemy_near, hp_low]
-  heal:
-    - flee_from_enemy:
-        and: [enemy_near, hp_low]
-    - patrol:
-        not: hp_low
+# Run and heal
+low_hp_beh:
   flee_from_enemy:
     - heal:
         not: enemy_near
+  heal:
+    - flee_from_enemy: enemy_near
+
+# Heal player
+low_player_hp_beh:
+  heal_ally:
+    - follow_player:
+        not: ally_near
+  follow_player:
+    - heal_ally: ally_hp_low
+
+
+healer:
+  patrol:
+    - move_to_enemy: enemy_near
+  move_to_enemy:
+    -
+      when: hp_low
+      do: low_hp_beh
+      with: flee_from_enemy
+    - patrol:
+        not: enemy_near
+  low_hp_beh:
+    - patrol: hp_high
+
+knight_healer:
+  follow_player:
+    -
+      when: ally_hp_low
+      do: low_player_hp_beh
+      with: heal_ally
+
+    -
+      when: hp_low
+      do: low_hp_beh
+      with: heal
+
+    - move_to_enemy: enemy_near
+  move_to_enemy:
+    -
+      when: ally_hp_low
+      do: low_player_hp_beh
+      with: heal_ally
+
+    -
+      when: hp_low
+      do: low_hp_beh
+      with: flee_from_enemy
+
+    - follow_player:
+        not: enemy_near
+  low_hp_beh:
+    - # Prioritize healing player even when dying
+      when: ally_hp_low
+      do: low_player_hp_beh
+      with: heal_ally
+    - follow_player: hp_high
+ 
+  low_player_hp_beh:
+    - follow_player: ally_hp_high

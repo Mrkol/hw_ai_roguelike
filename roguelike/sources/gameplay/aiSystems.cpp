@@ -31,29 +31,96 @@ SimulateAiInfo register_ai_systems(flecs::world& world, StateMachineTracker& tra
   auto eventsPhase = world.entity().add<SimulateAi>();
 
   using EvList = StateMachineTracker::EventList;
-
+  
   auto enemyNearEvent = world.entity("enemy_near");
-  world.system<const ClosestVisibleEnemy, EvList>("enemy_near event dispatcher")
+  world.system<EvList>("enemy_near event dispatcher")
     .kind(eventsPhase)
     .term(enemyNearEvent)
+    .term<ClosestVisibleEnemy>(flecs::Wildcard)
     .each(
       [&tracker, enemyNearEvent]
-      (flecs::entity e, const ClosestVisibleEnemy& closest, EvList& evs)
+      (flecs::entity e, EvList& evs)
       {
-        if (closest.pos.has_value())
+        // Could be optimized by using `iter`
+        if (!e.has<ClosestVisibleEnemy, NoVisibleEntity>())
           evs.events.emplace(enemyNearEvent);
       });
 
+  auto allyNearEvent = world.entity("ally_near");
+  world.system<EvList>("ally_near event dispatcher")
+    .kind(eventsPhase)
+    .term(allyNearEvent)
+    .term<ClosestVisibleAlly>(flecs::Wildcard)
+    .each(
+      [&tracker, allyNearEvent]
+      (flecs::entity e, EvList& evs)
+      {
+        // Could be optimized by using `iter`
+        if (!e.has<ClosestVisibleAlly, NoVisibleEntity>())
+          evs.events.emplace(allyNearEvent);
+      });
+
   auto hitpointsLowEvent = world.entity("hp_low");
-  world.system<const Hitpoints, const HitpointsLowThreshold, EvList>("hp_low event dispatcher")
+  world.system<const Hitpoints, const HitpointsThresholds, EvList>("hp_low event dispatcher")
     .kind(eventsPhase)
     .term(hitpointsLowEvent)
     .each(
       [&tracker, hitpointsLowEvent]
-      (flecs::entity e, const Hitpoints& hp, const HitpointsLowThreshold& threshold, EvList& evs)
+      (flecs::entity e, const Hitpoints& hp, const HitpointsThresholds& threshold, EvList& evs)
       {
-        if (hp.hitpoints < threshold.hitpoints)
+        if (hp.hitpoints < threshold.low)
           evs.events.emplace(hitpointsLowEvent);
+      });
+
+  auto hitpointsHighEvent = world.entity("hp_high");
+  world.system<const Hitpoints, const HitpointsThresholds, EvList>("hp_high event dispatcher")
+    .kind(eventsPhase)
+    .term(hitpointsHighEvent)
+    .each(
+      [&tracker, hitpointsHighEvent]
+      (flecs::entity e, const Hitpoints& hp, const HitpointsThresholds& threshold, EvList& evs)
+      {
+        if (hp.hitpoints > threshold.high)
+          evs.events.emplace(hitpointsHighEvent);
+      });
+
+  auto allyHpLowEvent = world.entity("ally_hp_low");
+  world.system<EvList>("ally_hp_low event dispatcher")
+    .kind(eventsPhase)
+    .term(allyHpLowEvent)
+    .term<ClosestVisibleAlly>(flecs::Wildcard)
+    .each(
+      [&tracker, allyHpLowEvent]
+      (flecs::entity e, EvList& evs)
+      {
+        auto ally = e.target<ClosestVisibleAlly>();
+        if (e.has<ClosestVisibleAlly, NoVisibleEntity>() || !ally.is_alive())
+          return;
+
+        auto allyHp = ally.get<Hitpoints>();
+        auto allyHpThres = ally.get<HitpointsThresholds>();
+        if (allyHp && allyHpThres && allyHp->hitpoints < allyHpThres->low)
+          evs.events.emplace(allyHpLowEvent);
+      });
+
+
+  auto allyHpHighEvent = world.entity("ally_hp_high");
+  world.system<EvList>("ally_hp_high event dispatcher")
+    .kind(eventsPhase)
+    .term(allyHpHighEvent)
+    .term<ClosestVisibleAlly>(flecs::Wildcard)
+    .each(
+      [&tracker, allyHpHighEvent]
+      (flecs::entity e, EvList& evs)
+      {
+        auto ally = e.target<ClosestVisibleAlly>();
+        if (e.has<ClosestVisibleAlly, NoVisibleEntity>() || !ally.is_alive())
+          return;
+
+        auto allyHp = ally.get<Hitpoints>();
+        auto allyHpThres = ally.get<HitpointsThresholds>();
+        if (allyHp && allyHpThres && allyHp->hitpoints > allyHpThres->high)
+          evs.events.emplace(allyHpHighEvent);
       });
 
 
@@ -95,29 +162,56 @@ SimulateAiInfo register_ai_systems(flecs::world& world, StateMachineTracker& tra
          }
        });
   
-  createReactor.operator()<Action, const Position, const ClosestVisibleEnemy>("move_to_enemy")
+  createReactor.operator()<Action, const Position>("move_to_enemy")
+    .term<ClosestVisibleEnemy>(flecs::Wildcard)
     .each(
       []
-       (Action& act, const Position& pos, const ClosestVisibleEnemy& epos)
-       {
-         if (epos.pos.has_value())
-           act.action = move_towards(pos.v, *epos.pos);
-       });
+      (flecs::entity e, Action& act, const Position& pos)
+      {
+        const auto enemy = e.target<ClosestVisibleEnemy>();
+        if (e.has<ClosestVisibleAlly, NoVisibleEntity>() || !enemy.is_alive())
+          return;
+
+        act.action = move_towards(pos.v, enemy.get<Position>()->v);
+      });
   
-  createReactor.operator()<Action, const Position, const ClosestVisibleEnemy>("flee_from_enemy")
+  createReactor.operator()<Action, const Position>("flee_from_enemy")
+    .term<ClosestVisibleEnemy>(flecs::Wildcard)
     .each(
       []
-       (Action& act, const Position& pos, const ClosestVisibleEnemy& epos)
-       {
-         if (epos.pos.has_value())
-           act.action = inverse_move(move_towards(pos.v, *epos.pos));
-       });
+      (flecs::entity e, Action& act, const Position& pos)
+      {
+        auto enemy = e.target<ClosestVisibleEnemy>();
+        if (e.has<ClosestVisibleAlly, NoVisibleEntity>() || !enemy.is_alive())
+          return;
+
+        act.action = inverse_move(move_towards(pos.v, enemy.get<Position>()->v));
+      });
   
   createReactor.operator()<Action&>("heal")
     .each(
       [](Action& act)
       {
         act.action = ActionType::REGEN;
+      });
+  
+  createReactor.operator()<Action>("heal_ally")
+    .each(
+      [](Action& act)
+      {
+        act.action = ActionType::HEAL;
+      });
+  
+  createReactor.operator()<Action, Position>("follow_player")
+    .each(
+      [playerq = world.query_builder<const Position>().term<IsPlayer>().build()]
+      (Action& act, const Position& pos)
+      {
+        playerq.each([&](const Position& ppos)
+          {
+            if (glm::length(glm::vec2(pos.v) - glm::vec2(ppos.v)) > 2)
+              act.action = move_towards(pos.v, ppos.v);
+          });
       });
 
   return

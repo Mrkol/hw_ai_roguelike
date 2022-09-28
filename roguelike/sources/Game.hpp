@@ -45,6 +45,8 @@ class Game
     smTracker_.addSmToEntity(create_monster(world_, -5, -5, 0xff111111), "berserker");
     smTracker_.addSmToEntity(create_monster(world_, -5, 5, 0xff00ff00), "healer");
     
+    smTracker_.addSmToEntity(create_friend(world_, 1, 1), "knight_healer");
+
     create_powerup(world_, 7, 7, 10.f);
     create_powerup(world_, 10, -6, 10.f);
     create_powerup(world_, 10, -4, 10.f);

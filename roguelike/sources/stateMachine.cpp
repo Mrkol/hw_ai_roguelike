@@ -5,6 +5,8 @@
 #include "assert.hpp"
 
 
+struct InactiveSubmachineTag {};
+
 StateMachineTracker::StateMachineTracker(
   flecs::world& world, flecs::entity simulateAiPipeline, flecs::entity transitionPhase)
   : world_{world}
@@ -34,6 +36,7 @@ void StateMachineTracker::load(std::filesystem::path path)
 
     sm.add(flecs::Union);
     
+    std::unordered_set<flecs::entity> subStateMachines;
     std::unordered_set<flecs::entity> trackedEvents;
     std::optional<flecs::entity> firstState;
     for (auto stateIt = smDesc.begin(); stateIt != smDesc.end(); ++stateIt)
@@ -42,15 +45,29 @@ void StateMachineTracker::load(std::filesystem::path path)
       if (!firstState.has_value())
         firstState = state;
 
+      if (stateMachineAppliers_.contains(state))
+        subStateMachines.emplace(state);
+
       auto& desc = stateIt->second;
       NG_ASSERT(desc.IsSequence());
 
       for (std::size_t i = 0; i < desc.size(); ++i)
       {
-        std::unordered_set<flecs::entity> stateTrackedEvents;
+        auto transition = desc[i];
+        const bool isSimple = transition.size() == 1;
+        auto tgtStateNode = isSimple ? transition.begin()->first : transition["do"];
+        auto predNode = isSimple ? transition.begin()->second : transition["when"];
+        std::optional<YAML::Node> subStateNode = std::nullopt;
+        if (!isSimple && transition["with"].IsDefined())
+          subStateNode = transition["with"];
 
-        auto pred = parseEventExpression(desc[i].begin()->second, trackedEvents);
-        auto tgtState = world_.entity(desc[i].begin()->first.as<std::string>().c_str());
+        auto pred = parseEventExpression(predNode, trackedEvents);
+        auto tgtState = world_.entity(tgtStateNode.as<std::string>().c_str());
+
+        NG_ASSERT(subStateNode.has_value() == stateMachineAppliers_.contains(tgtState));
+
+        auto tgtSubState = subStateNode.has_value() ? world_.entity(subStateNode->as<std::string>().c_str())
+          : flecs::entity{};
 
         // System for transitioning
         world_.system<EventList>(fmt::format("SM {}: {} to {} transition", sm.name(), state.name(), tgtState.name()).c_str())
@@ -59,23 +76,43 @@ void StateMachineTracker::load(std::filesystem::path path)
           // Hack for proper synchronization
           .term(tgtState).optional().write()
           .each(
-            [state, tgtState, sm, pred = std::move(pred)]
+            [state, tgtState, sm, pred = std::move(pred),
+              srcSubmachine = stateMachineAppliers_.contains(state),
+              dstSubmachine = stateMachineAppliers_.contains(tgtState),
+              tgtSubState,
+              inactiveState = world_.entity<InactiveSubmachineTag>()]
             (flecs::entity e, EventList& evts)
             {
               if (pred(evts))
+              {
+                if (srcSubmachine)
+                  e.add(state, inactiveState);
+
                 e.add(sm, tgtState);
+                
+                if (dstSubmachine)
+                  e.add(tgtState, tgtSubState);
+              }
             });
       }
     }
 
     stateMachineAppliers_.emplace(sm,
-      [sm, state = std::move(*firstState), trackedEvents = std::move(trackedEvents)]
+      [this, sm,
+        state = std::move(*firstState),
+        trackedEvents = std::move(trackedEvents),
+        subSms = std::move(subStateMachines)]
       (flecs::entity entity)
       {
         entity.add(sm, state);
         entity.add<EventList>();
         for (auto event : trackedEvents)
           entity.add(event);
+        for (auto subSm : subSms)
+        {
+          stateMachineAppliers_.at(subSm)(entity);
+          entity.add(subSm, world_.entity<InactiveSubmachineTag>());
+        }
       });
   }
 }

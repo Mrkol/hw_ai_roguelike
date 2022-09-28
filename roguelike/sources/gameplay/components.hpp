@@ -21,20 +21,24 @@ struct PatrolPos
   glm::ivec2 pos;
 };
 
-struct ClosestVisibleEnemy
+struct Visibility
 {
   float visibility = 6;
-  std::optional<glm::ivec2> pos;
 };
+
+struct NoVisibleEntity {};
+struct ClosestVisibleEnemy {};
+struct ClosestVisibleAlly {};
 
 struct Hitpoints
 {
   float hitpoints = 10.f;
 };
 
-struct HitpointsLowThreshold
+struct HitpointsThresholds
 {
-  float hitpoints = 1.f;
+  float low = 1.f;
+  float high = 10.f;
 };
 
 struct HitpointsRegen
@@ -50,6 +54,7 @@ enum class ActionType
   MOVE_DOWN,
   MOVE_UP,
   REGEN,
+  HEAL
 };
 
 struct Action
