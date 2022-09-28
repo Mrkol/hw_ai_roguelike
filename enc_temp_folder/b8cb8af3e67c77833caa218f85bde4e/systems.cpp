@@ -46,10 +46,6 @@ flecs::entity register_systems(flecs::world& world)
     .member<float>("damage");
   world.component<Team>()
     .member<int>("team");
-  world.component<HealAmount>()
-    .member<float>("hitpoints");
-  world.component<PowerupAmount>()
-    .member<float>("damage");
 
 
 
