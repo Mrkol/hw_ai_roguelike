@@ -1,7 +1,7 @@
 #include "entityFactories.hpp"
 #include "components.hpp"
 
-flecs::entity create_monster(flecs::world& world, int x, int y, uint32_t color)
+flecs::entity create_monster(flecs::world& world, int x, int y)
 {
   return world.entity()
     .set(Position{{x, y}})
@@ -13,7 +13,6 @@ flecs::entity create_monster(flecs::world& world, int x, int y, uint32_t color)
     .set(HitpointsThresholds{25.f, 50.f})
     .set(HitpointsRegen{10.f})
     .set(Action{ActionType::NOP})
-    .set(Color{color})
     .set(Team{1})
     .set(NumActions{1, 0})
     .set(MeleeDamage{10.f});
@@ -26,7 +25,6 @@ flecs::entity create_player(flecs::world& world, int x, int y)
     .set(MovePos{{x, y}})
     .set(Hitpoints{100.f})
     .set(HitpointsThresholds{50.f, 100.f})
-    .set(Color{0xffcccccc})
     .set(Action{ActionType::NOP})
     .add<IsPlayer>()
     .set(Team{0})
@@ -45,7 +43,6 @@ flecs::entity create_friend(flecs::world& world, int x, int y)
     .add<ClosestVisibleAlly, NoVisibleEntity>()
     .set(HitpointsThresholds{50.f, 75.f})
     .set(HitpointsRegen{10.f})
-    .set(Color{0xffccccff})
     .set(Action{ActionType::NOP})
     .set(Team{0})
     .set(NumActions{1, 0})

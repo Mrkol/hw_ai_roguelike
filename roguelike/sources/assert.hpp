@@ -3,6 +3,10 @@
 #include <string_view>
 #include <spdlog/spdlog.h>
 
+#if __has_include(<allegro5/allegro_native_dialog.h>)
+#include <allegro5/allegro_native_dialog.h> 
+#endif
+
 
 #if !__cpp_lib_source_location
 

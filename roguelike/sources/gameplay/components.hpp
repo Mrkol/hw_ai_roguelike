@@ -4,6 +4,8 @@
 
 #include <glm/glm.hpp>
 
+#include <sprite.hpp>
+
 
 struct MovePos
 {
@@ -86,6 +88,11 @@ struct PowerupAmount
 struct Color
 {
   uint32_t color;
+};
+
+struct Sprite
+{
+  SpriteId id;
 };
 
 struct IsPlayer {};

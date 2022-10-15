@@ -31,21 +31,30 @@ class Game
     , endOfTurnPipeline_{register_systems(world_)}
     , simulateAiInfo_{register_ai_systems(world_, smTracker_)}
     , smTracker_{world_, simulateAiInfo_.simulateAiPipieline, simulateAiInfo_.stateTransitionPhase}
-    , drawableQuery_{world_.query_builder<const Position, const Color>().build()}
+    , drawableQuery_{
+      world_.query_builder<const Position>()
+        .term<const Color>().or_()
+        .term<const Sprite>().or_()
+        .build()}
     , playerQuery_{world_.query_builder<const Position, const NumActions>().term<IsPlayer>().build()}
   {
-
     smTracker_.load(PROJECT_SOURCE_DIR "/roguelike/resources/monsters.yml");
+    auto elfSprite = self().loadSprite(PROJECT_SOURCE_DIR "/roguelike/resources/Elf_F_Idle_1.png");
+    auto banditSprite = self().loadSprite(PROJECT_SOURCE_DIR "/roguelike/resources/Bandit_Idle_1.png");
+    auto bearSprite = self().loadSprite(PROJECT_SOURCE_DIR "/roguelike/resources/Bear_Idle_4.png");
+    auto knightSprite = self().loadSprite(PROJECT_SOURCE_DIR "/roguelike/resources/ElvenKnight_Idle_1.png");
+    auto gnollSprite = self().loadSprite(PROJECT_SOURCE_DIR "/roguelike/resources/GnollBrute_Idle_1.png");
 
-    create_player(world_, 0, 0);
+    create_player(world_, 0, 0)
+      .set<Sprite>({elfSprite});
 
     
-    smTracker_.addSmToEntity(create_monster(world_, 5, 5, 0xffee00ee), "monster");
-    smTracker_.addSmToEntity(create_monster(world_, 10, -5, 0xffee00ee), "monster");
-    smTracker_.addSmToEntity(create_monster(world_, -5, -5, 0xff111111), "berserker");
-    smTracker_.addSmToEntity(create_monster(world_, -5, 5, 0xff00ff00), "healer");
+    smTracker_.addSmToEntity(create_monster(world_, 5, 5).set<Sprite>({banditSprite}), "monster");
+    smTracker_.addSmToEntity(create_monster(world_, 10, -5).set<Sprite>({banditSprite}), "monster");
+    smTracker_.addSmToEntity(create_monster(world_, -5, -5).set<Sprite>({gnollSprite}), "berserker");
+    smTracker_.addSmToEntity(create_monster(world_, -5, 5).set<Sprite>({bearSprite}), "healer");
     
-    smTracker_.addSmToEntity(create_friend(world_, 1, 1), "knight_healer");
+    smTracker_.addSmToEntity(create_friend(world_, 1, 1).set<Sprite>({knightSprite}), "knight_healer");
 
     create_powerup(world_, 7, 7, 10.f);
     create_powerup(world_, 10, -6, 10.f);
@@ -132,16 +141,26 @@ class Game
       al_draw_line(c.x, c.y, d.x, d.y, al_map_rgba(100, 100, 100, 128), 2);
     }
 
-    drawableQuery_.each([&](flecs::entity e, const Position &pos, const Color color)
+    drawableQuery_.each([&](flecs::entity e, const Position &pos)
       {
         auto min = project(pos.v);
         auto max = project(pos.v + glm::ivec2{1, 1});
-        al_draw_filled_rectangle(min.x, min.y, max.x, max.y, colorToAllegro(color.color));
+
+        if (auto color = e.get<Color>())
+          al_draw_filled_rectangle(min.x, min.y, max.x, max.y, colorToAllegro(color->color));
+
+        if (auto sprite = e.get<Sprite>())
+          if (auto bitmap = self().getSpriteBitmap(sprite->id))
+            al_draw_scaled_bitmap(
+              bitmap,
+              0, 0, al_get_bitmap_width(bitmap), al_get_bitmap_height(bitmap),
+              min.x, min.y, max.x - min.x, max.y - min.y, ALLEGRO_FLIP_VERTICAL);
+
         if (auto hp = e.get<Hitpoints>())
-          al_draw_text(self().getFont(), al_map_rgb(255, 255, 255), min.x + 10, max.y + 10, 0,
+          al_draw_text(self().getFont(), al_map_rgb(255, 255, 255), min.x + 10, max.y - 10, 0,
             fmt::format("HP: {}", hp->hitpoints).c_str());
         if (auto dmg = e.get<MeleeDamage>())
-          al_draw_text(self().getFont(), al_map_rgb(255, 255, 255), min.x + 10, max.y + 30, 0,
+          al_draw_text(self().getFont(), al_map_rgb(255, 255, 255), min.x + 10, max.y + 10, 0,
             fmt::format("DMG: {}", dmg->damage).c_str());
       });
   }
@@ -158,7 +177,7 @@ class Game
   StateMachineTracker smTracker_;
 
   glm::vec2 cameraPosition_;
-
-  flecs::query<const Position, const Color> drawableQuery_;
+  
+  flecs::query<const Position> drawableQuery_;
   flecs::query<const Position, const NumActions> playerQuery_;
 };

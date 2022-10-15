@@ -1,13 +1,18 @@
 #pragma once
 
+#include <unordered_map>
+#include <string>
+
 #include <allegro5/allegro5.h>
 #include <allegro5/allegro_font.h>
 #include <allegro5/allegro_primitives.h>
+#include <allegro5/allegro_image.h>
 #include <imgui.h>
 #include <backends/imgui_impl_allegro5.h>
 
 #include "assert.hpp"
 #include "util.hpp"
+#include "sprite.hpp"
 
 
 template<class Derived>
@@ -23,6 +28,7 @@ class Allegro
     NG_VERIFY(al_install_keyboard());
     NG_VERIFY(al_install_mouse());
     NG_VERIFY(al_init_primitives_addon());
+    NG_VERIFY(al_init_image_addon());
 
     event_queue_ = {al_create_event_queue(), &al_destroy_event_queue};
     display_ = {al_create_display(kWidth, kHeight), &al_destroy_display};
@@ -39,6 +45,26 @@ class Allegro
     al_register_event_source(event_queue_.get(), al_get_timer_event_source(draw_timer_.get()));
 
     al_start_timer(draw_timer_.get());
+  }
+
+  SpriteId loadSprite(const char* path)
+  {
+    auto it = spriteIds_.find(path);
+    if (it == spriteIds_.end())
+    {
+      SpriteId id = spriteIds_.size();
+      it = spriteIds_.emplace(path, id).first;
+      UniquePtr<ALLEGRO_BITMAP> bitmap{al_load_bitmap(path), al_destroy_bitmap};
+      NG_ASSERT(bitmap.get() != nullptr);
+      spriteBitmaps_.emplace(id, std::move(bitmap));
+    }
+    return it->second;
+  }
+
+  ALLEGRO_BITMAP* getSpriteBitmap(SpriteId id)
+  {
+    auto it = spriteBitmaps_.find(id);
+    return it == spriteBitmaps_.end() ? nullptr : it->second.get();
   }
 
   ~Allegro()
@@ -129,6 +155,9 @@ class Allegro
   UniquePtr<ALLEGRO_DISPLAY> display_{nullptr, nullptr};
   UniquePtr<ALLEGRO_FONT> font_{nullptr, nullptr};
   UniquePtr<ALLEGRO_TIMER> draw_timer_{nullptr, nullptr};
+
+  std::unordered_map<std::string, SpriteId> spriteIds_;
+  std::unordered_map<SpriteId, UniquePtr<ALLEGRO_BITMAP>> spriteBitmaps_;
 
   bool redraw_this_frame_ = false;
 };

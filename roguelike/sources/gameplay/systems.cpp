@@ -50,6 +50,8 @@ flecs::entity register_systems(flecs::world& world)
     .member<float>("hitpoints");
   world.component<PowerupAmount>()
     .member<float>("damage");
+  world.component<Sprite>()
+    .member<std::size_t>("id");
 
 
 
