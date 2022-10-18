@@ -1,15 +1,20 @@
 #pragma once
 
+#include <array>
+
 #include <glm/glm.hpp>
 #include <function2/function2.hpp>
 #include <allegro5/keycodes.h>
+
+#include "stateMachine.hpp"
+#include "behTree.hpp"
 
 #include "gameplay/components.hpp"
 #include "gameplay/systems.hpp"
 #include "gameplay/aiSystems.hpp"
 #include "gameplay/entityFactories.hpp"
-
-#include "stateMachine.hpp"
+#include "gameplay/behTreeLibrary.hpp"
+#include "gameplay/actions.hpp"
 
 
 ALLEGRO_COLOR colorToAllegro(uint32_t color)
@@ -48,13 +53,42 @@ class Game
     create_player(world_, 0, 0)
       .set<Sprite>({elfSprite});
 
+    // I hate initialization
+    auto vec = [](auto... vs)
+      {
+        std::unique_ptr<beh_tree::Node> init[] = { std::move(vs)... };
+        return std::vector(
+          std::make_move_iterator(std::begin(init)),
+          std::make_move_iterator(std::end(init)));
+      };
+
+    auto test = create_monster(world_, 5, 5).set<Sprite>({banditSprite});
+    test.set<beh_tree::BehTree>(beh_tree::BehTree(test,
+      beh_tree::select(vec(
+          // Prioritize attacking an enemy, while keeping track of health
+          beh_tree::race(vec(
+            beh_tree::sequence(vec(
+              beh_tree::get_closest_enemy(test, "enemy"),
+              beh_tree::move_to("enemy")
+            )),
+            beh_tree::sequence(vec(
+              beh_tree::wait_event(world_.entity("hp_low")),
+              beh_tree::fail()
+            ))
+          )),
+          // If attacking an enemy failed, health was low, flee
+          beh_tree::sequence(vec(
+            beh_tree::get_closest_enemy(test, "enemy"),
+            beh_tree::move_to("enemy", true)
+          ))
+        ))));
     
-    smTracker_.addSmToEntity(create_monster(world_, 5, 5).set<Sprite>({banditSprite}), "monster");
-    smTracker_.addSmToEntity(create_monster(world_, 10, -5).set<Sprite>({banditSprite}), "monster");
-    smTracker_.addSmToEntity(create_monster(world_, -5, -5).set<Sprite>({gnollSprite}), "berserker");
-    smTracker_.addSmToEntity(create_monster(world_, -5, 5).set<Sprite>({bearSprite}), "healer");
-    
-    smTracker_.addSmToEntity(create_friend(world_, 1, 1).set<Sprite>({knightSprite}), "knight_healer");
+    // smTracker_.addSmToEntity(create_monster(world_, 5, 5).set<Sprite>({banditSprite}), "monster");
+    // smTracker_.addSmToEntity(create_monster(world_, 10, -5).set<Sprite>({banditSprite}), "monster");
+    // smTracker_.addSmToEntity(create_monster(world_, -5, -5).set<Sprite>({gnollSprite}), "berserker");
+    // smTracker_.addSmToEntity(create_monster(world_, -5, 5).set<Sprite>({bearSprite}), "healer");
+    // 
+    // smTracker_.addSmToEntity(create_friend(world_, 1, 1).set<Sprite>({knightSprite}), "knight_healer");
 
     create_powerup(world_, 7, 7, 10.f);
     create_powerup(world_, 10, -6, 10.f);
@@ -155,7 +189,7 @@ class Game
               bitmap,
               0, 0, al_get_bitmap_width(bitmap), al_get_bitmap_height(bitmap),
               min.x, min.y, max.x - min.x, max.y - min.y, ALLEGRO_FLIP_VERTICAL);
-
+        
         if (auto hp = e.get<Hitpoints>())
           al_draw_text(self().getFont(), al_map_rgb(255, 255, 255), min.x + 10, max.y - 10, 0,
             fmt::format("HP: {}", hp->hitpoints).c_str());

@@ -1,7 +1,15 @@
 cmake_minimum_required(VERSION 3.20)
 
 
-add_executable(roguelike "sources/main.cpp" "sources/stateMachine.cpp" "sources/gameplay/entityFactories.cpp" "sources/gameplay/systems.cpp" "sources/gameplay/aiSystems.cpp")
+add_executable(roguelike
+    "sources/main.cpp"
+    "sources/stateMachine.cpp"
+    "sources/gameplay/entityFactories.cpp"
+    "sources/gameplay/systems.cpp"
+    "sources/gameplay/aiSystems.cpp"
+    "sources/gameplay/behTreeLibrary.cpp"
+    "sources/behTree.cpp"
+)
 target_include_directories(roguelike PRIVATE "sources")
 target_link_libraries(roguelike
     fmt spdlog function2 glm::glm "yaml-cpp" flecs_static allegro

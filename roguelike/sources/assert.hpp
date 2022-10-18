@@ -56,7 +56,7 @@ template<typename... Ts>
 #define NG_PANIC(msg, ...)                                                   \
     do                                                                       \
     {                                                                        \
-        detail::panic(NG_CURRENT_LOCATION, (msg), ##__VA_ARGS__);            \
+        ::detail::panic(NG_CURRENT_LOCATION, (msg), ##__VA_ARGS__);            \
     } while (false)
 
 

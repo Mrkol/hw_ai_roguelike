@@ -1,5 +1,7 @@
 #include "entityFactories.hpp"
 #include "components.hpp"
+#include "actions.hpp"
+
 
 flecs::entity create_monster(flecs::world& world, int x, int y)
 {

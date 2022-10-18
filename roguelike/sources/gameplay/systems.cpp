@@ -1,5 +1,6 @@
 #include "systems.hpp"
 #include "components.hpp"
+#include "actions.hpp"
 
 
 static Position move_pos(Position pos, ActionType action)

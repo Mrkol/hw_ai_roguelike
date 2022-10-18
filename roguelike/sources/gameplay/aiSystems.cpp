@@ -4,42 +4,35 @@
 
 #include <fmt/format.h>
 
+#include <behTree.hpp>
 #include "components.hpp"
+#include "actions.hpp"
 
 
 struct SimulateAi {};
 
-static ActionType move_towards(const glm::ivec2& from, const glm::ivec2& to)
-{
-  int deltaX = to.x - from.x;
-  int deltaY = to.y - from.y;
-  if (glm::abs(deltaX) > glm::abs(deltaY))
-    return deltaX > 0 ? ActionType::MOVE_RIGHT : ActionType::MOVE_LEFT;
-  return deltaY > 0 ? ActionType::MOVE_UP : ActionType::MOVE_DOWN;
-}
-
-static ActionType inverse_move(ActionType move)
-{
-  return move == ActionType::MOVE_LEFT  ? ActionType::MOVE_RIGHT :
-         move == ActionType::MOVE_RIGHT ? ActionType::MOVE_LEFT :
-         move == ActionType::MOVE_UP    ? ActionType::MOVE_DOWN :
-         move == ActionType::MOVE_DOWN  ? ActionType::MOVE_UP : move;
-}
-
 SimulateAiInfo register_ai_systems(flecs::world& world, StateMachineTracker& tracker)
 {
-  auto eventsPhase = world.entity().add<SimulateAi>();
+  auto eventsPhase = world.entity("ai_events_phase").add<SimulateAi>();
 
-  using EvList = StateMachineTracker::EventList;
+  world.system<beh_tree::BehTree, Blackboard>("beh_tree_execute")
+    .kind(eventsPhase)
+    .term<beh_tree::ActingNodes>().read_write()
+    .term<beh_tree::ReactingNodes>().read_write()
+    .each(
+      [](beh_tree::BehTree& tree, Blackboard&)
+      {
+        tree.execute();
+      });
   
   auto enemyNearEvent = world.entity("enemy_near");
-  world.system<EvList>("enemy_near event dispatcher")
+  world.system<EventList>("enemy_near event dispatcher")
     .kind(eventsPhase)
     .term(enemyNearEvent)
     .term<ClosestVisibleEnemy>(flecs::Wildcard)
     .each(
-      [&tracker, enemyNearEvent]
-      (flecs::entity e, EvList& evs)
+      [enemyNearEvent]
+      (flecs::entity e, EventList& evs)
       {
         // Could be optimized by using `iter`
         if (!e.has<ClosestVisibleEnemy, NoVisibleEntity>())
@@ -47,13 +40,13 @@ SimulateAiInfo register_ai_systems(flecs::world& world, StateMachineTracker& tra
       });
 
   auto allyNearEvent = world.entity("ally_near");
-  world.system<EvList>("ally_near event dispatcher")
+  world.system<EventList>("ally_near event dispatcher")
     .kind(eventsPhase)
     .term(allyNearEvent)
     .term<ClosestVisibleAlly>(flecs::Wildcard)
     .each(
-      [&tracker, allyNearEvent]
-      (flecs::entity e, EvList& evs)
+      [allyNearEvent]
+      (flecs::entity e, EventList& evs)
       {
         // Could be optimized by using `iter`
         if (!e.has<ClosestVisibleAlly, NoVisibleEntity>())
@@ -61,37 +54,37 @@ SimulateAiInfo register_ai_systems(flecs::world& world, StateMachineTracker& tra
       });
 
   auto hitpointsLowEvent = world.entity("hp_low");
-  world.system<const Hitpoints, const HitpointsThresholds, EvList>("hp_low event dispatcher")
+  world.system<const Hitpoints, const HitpointsThresholds, EventList>("hp_low event dispatcher")
     .kind(eventsPhase)
     .term(hitpointsLowEvent)
     .each(
-      [&tracker, hitpointsLowEvent]
-      (flecs::entity e, const Hitpoints& hp, const HitpointsThresholds& threshold, EvList& evs)
+      [hitpointsLowEvent]
+      (flecs::entity e, const Hitpoints& hp, const HitpointsThresholds& threshold, EventList& evs)
       {
         if (hp.hitpoints < threshold.low)
           evs.events.emplace(hitpointsLowEvent);
       });
 
   auto hitpointsHighEvent = world.entity("hp_high");
-  world.system<const Hitpoints, const HitpointsThresholds, EvList>("hp_high event dispatcher")
+  world.system<const Hitpoints, const HitpointsThresholds, EventList>("hp_high event dispatcher")
     .kind(eventsPhase)
     .term(hitpointsHighEvent)
     .each(
-      [&tracker, hitpointsHighEvent]
-      (flecs::entity e, const Hitpoints& hp, const HitpointsThresholds& threshold, EvList& evs)
+      [hitpointsHighEvent]
+      (flecs::entity e, const Hitpoints& hp, const HitpointsThresholds& threshold, EventList& evs)
       {
         if (hp.hitpoints > threshold.high)
           evs.events.emplace(hitpointsHighEvent);
       });
 
   auto allyHpLowEvent = world.entity("ally_hp_low");
-  world.system<EvList>("ally_hp_low event dispatcher")
+  world.system<EventList>("ally_hp_low event dispatcher")
     .kind(eventsPhase)
     .term(allyHpLowEvent)
     .term<ClosestVisibleAlly>(flecs::Wildcard)
     .each(
-      [&tracker, allyHpLowEvent]
-      (flecs::entity e, EvList& evs)
+      [allyHpLowEvent]
+      (flecs::entity e, EventList& evs)
       {
         auto ally = e.target<ClosestVisibleAlly>();
         if (e.has<ClosestVisibleAlly, NoVisibleEntity>() || !ally.is_alive())
@@ -105,13 +98,13 @@ SimulateAiInfo register_ai_systems(flecs::world& world, StateMachineTracker& tra
 
 
   auto allyHpHighEvent = world.entity("ally_hp_high");
-  world.system<EvList>("ally_hp_high event dispatcher")
+  world.system<EventList>("ally_hp_high event dispatcher")
     .kind(eventsPhase)
     .term(allyHpHighEvent)
     .term<ClosestVisibleAlly>(flecs::Wildcard)
     .each(
       [&tracker, allyHpHighEvent]
-      (flecs::entity e, EvList& evs)
+      (flecs::entity e, EventList& evs)
       {
         auto ally = e.target<ClosestVisibleAlly>();
         if (e.has<ClosestVisibleAlly, NoVisibleEntity>() || !ally.is_alive())
@@ -123,12 +116,36 @@ SimulateAiInfo register_ai_systems(flecs::world& world, StateMachineTracker& tra
           evs.events.emplace(allyHpHighEvent);
       });
 
+  world.system<const EventList, beh_tree::ReactingNodes, beh_tree::ActingNodes>("beh_tree_react")
+    .kind(eventsPhase)
+    .term<Blackboard>().read_write()
+    .each(
+      [](const EventList& evs, beh_tree::ReactingNodes& nodes, beh_tree::ActingNodes&)
+      {
+        auto copy = nodes.eventReactors;
+        for (auto[ev, node] : copy)
+          if (evs.events.contains(ev))
+            node->act();
+      });
 
-  auto stateTransitionPhase = world.entity().add<SimulateAi>().depends_on(eventsPhase);
-  auto stateReactionPhase = world.entity().add<SimulateAi>().depends_on(stateTransitionPhase);
+
+  auto stateTransitionPhase = world.entity("ai_state_transition_phase").add<SimulateAi>().depends_on(eventsPhase);
+  auto stateReactionPhase = world.entity("ai_reactions_phase").add<SimulateAi>().depends_on(stateTransitionPhase);
 
 
   static std::default_random_engine engine;
+
+  world.system<beh_tree::ActingNodes>("beh_tree_act")
+    .kind(stateReactionPhase)
+    .term<Blackboard>().read_write()
+    .term<Action>().read_write()
+    .each(
+      [](beh_tree::ActingNodes& nodes)
+      {
+        auto copy = nodes.actingNodes;
+        for (auto node : copy)
+          node->act();
+      });
 
   auto createReactor =
     [&world, stateReactionPhase]

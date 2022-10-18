@@ -9,6 +9,7 @@
 #include <function2/function2.hpp>
 
 #include "flecsHash.hpp"
+#include "eventList.hpp"
 
 
 class StateMachineTracker
@@ -18,13 +19,6 @@ public:
   StateMachineTracker(flecs::world& world, flecs::entity simulateAiPipeline, flecs::entity transitionPhase);
 
   void load(std::filesystem::path path);
-
-  // Even dispatchers should match this component and insert
-  // events that occured into the set.
-  struct EventList
-  {
-    std::unordered_set<flecs::entity> events;
-  };
 
   void addSmToEntity(flecs::entity entity, const char* sm);
 

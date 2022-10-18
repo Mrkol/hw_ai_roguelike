@@ -48,22 +48,6 @@ struct HitpointsRegen
   float regenPerTurn = 10.f;
 };
 
-enum class ActionType
-{
-  NOP = 0,
-  MOVE_LEFT,
-  MOVE_RIGHT,
-  MOVE_DOWN,
-  MOVE_UP,
-  REGEN,
-  HEAL
-};
-
-struct Action
-{
-  ActionType action = ActionType::NOP;
-};
-
 struct NumActions
 {
   int numActions = 1;
