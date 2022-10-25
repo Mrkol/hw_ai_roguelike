@@ -20,46 +20,8 @@ namespace beh_tree
 // that's too much work for a homework assignment.
 
 class Node;
-  
-class INodeCaller
-{
-public:
-  virtual void succeeded(Node* which) = 0;
-  virtual void failed(Node* which) = 0;
-};
-
-class IActor
-{
-public:
-  virtual void act() = 0;
-};
-
-class Node
-{
-public:
-  virtual void execute() = 0;
-  
-  // Invariant: can only be called if execute was called
-  // but the caller has not received a succeeded/failed
-  // signal yet.
-  virtual void cancel() = 0;
-
-  // cloning polymorphic hierarchies is a pain
-  virtual std::unique_ptr<Node> clone() = 0;
-
-
-  void succeed() { owner_->succeeded(this); }
-  void fail() { owner_->failed(this); }
-
-  // Called exactly once after tree has been initialized
-  virtual void connect(flecs::entity entity, INodeCaller* owner) { entity_ = entity; owner_ = owner; };
-
-  virtual ~Node() = default;
-
-protected:
-  flecs::entity entity_;
-  INodeCaller* owner_{nullptr};
-};
+class IActor;
+class BehTree;
 
 struct ActingNodes
 {
@@ -69,6 +31,54 @@ struct ActingNodes
 struct ReactingNodes
 {
   std::unordered_multimap<flecs::entity, IActor*> eventReactors;
+};
+
+struct RunParams
+{
+  BehTree& tree;
+  Blackboard& bb;
+  ActingNodes& actors;
+  ReactingNodes& reactors;
+};
+  
+class INodeCaller
+{
+public:
+  virtual void succeeded(RunParams params, Node* which) = 0;
+  virtual void failed(RunParams params, Node* which) = 0;
+};
+
+class IActor
+{
+public:
+  virtual void act(RunParams params) = 0;
+};
+
+class Node
+{
+public:
+  virtual void execute(RunParams params) = 0;
+  
+  // Invariant: can only be called if execute was called
+  // but the caller has not received a succeeded/failed
+  // signal yet.
+  virtual void cancel(RunParams params) = 0;
+
+  // cloning polymorphic hierarchies is a pain
+  virtual std::unique_ptr<Node> clone() = 0;
+
+
+  void succeed(RunParams params) { owner_->succeeded(params, this); }
+  void fail(RunParams params) { owner_->failed(params, this); }
+
+  // Called exactly once after tree has been initialized
+  virtual void connect(flecs::entity entity, INodeCaller* owner) { entity_ = entity; owner_ = owner; };
+
+  virtual ~Node() = default;
+
+protected:
+  flecs::entity entity_;
+  INodeCaller* owner_{nullptr};
 };
 
 // Convenience base class for nodes with simple cloning logic
@@ -81,6 +91,13 @@ struct ActionNode : Node
   }
 };
 
+template<class Derived>
+struct InstantActionNode : ActionNode<Derived>
+{
+  void cancel(RunParams params) override {}
+};
+
+
 class BehTree
 {
 public:
@@ -91,20 +108,14 @@ public:
   {
     struct Callback : INodeCaller
     {
-      void succeeded(Node*) override
+      void succeeded(RunParams params, Node*) override
       {
-        e.set([](BehTree& bt)
-          {
-            bt.running_ = false;
-          });
+        params.tree.running_ = false;
       }
 
-      void failed(Node*) override
+      void failed(RunParams params, Node*) override
       {
-        e.set([](BehTree& bt)
-          {
-            bt.running_ = false;
-          });
+        params.tree.running_ = false;
       }
 
       flecs::entity e;
@@ -131,10 +142,10 @@ public:
     return BehTree(entity, root_->clone());
   }
 
-  void execute()
+  void execute(RunParams params)
   {
     if (!std::exchange(running_, true) && root_)
-      root_->execute();
+      root_->execute(params);
   }
 
 private:
@@ -149,6 +160,8 @@ std::unique_ptr<Node> select(std::vector<std::unique_ptr<Node>> nodes);
 std::unique_ptr<Node> parallel(std::vector<std::unique_ptr<Node>> nodes);
 // First child to finish decides the overall result
 std::unique_ptr<Node> race(std::vector<std::unique_ptr<Node>> nodes);
+// Repeats a node until it fails
+std::unique_ptr<Node> repeat(std::unique_ptr<Node> node);
 
 // Following unreal engine devs' advice, predicates are better left as adapter nodes
 // than as succeed/fail returning nodes. Plus there's no need taint behtree code with
@@ -158,6 +171,11 @@ std::unique_ptr<Node> predicate(Pred pred, std::unique_ptr<Node> execute);
 
 std::unique_ptr<Node> wait_event(flecs::entity event);
 std::unique_ptr<Node> fail();
+std::unique_ptr<Node> succeed();
+std::unique_ptr<Node> get_pair_target(std::string_view bb_from, flecs::entity rel, std::string_view bb_to);
+
+template<class T>
+std::unique_ptr<Node> broadcast(flecs::query_builder<Blackboard> query, std::string_view bb_name);
 
 } // namespace beh_tree
 

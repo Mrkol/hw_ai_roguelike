@@ -1,6 +1,7 @@
 #include "behTreeLibrary.hpp"
 
 #include "actions.hpp"
+#include <assert.hpp>
 
 
 namespace beh_tree
@@ -27,12 +28,13 @@ std::unique_ptr<Node> get_closest(
     {
     }
 
-    void execute() override
+    void execute(RunParams params) override
     {
       auto mypos = entity_.get<Position>()->v;
-      auto bb = entity_.get_mut<Blackboard>();
+      auto vis = entity_.get<Visibility>();
+      float visibility = vis ? vis->visibility : std::numeric_limits<float>::max();
 
-      std::optional<glm::ivec2> closest;
+      std::optional<flecs::entity> closest;
       float closest_length = 0;
       query.each([&](flecs::entity e, const Position& pos)
         {
@@ -40,24 +42,28 @@ std::unique_ptr<Node> get_closest(
             return;
 
           float length = glm::length(glm::vec2(mypos - pos.v));
+
+          if (length > visibility)
+            return;
+
           if (!closest.has_value() || length < closest_length)
           {
-            closest = pos.v;
+            closest = e;
             closest_length = length;
           }
         });
 
       if (!closest.has_value())
       {
-        fail();
+        fail(params);
         return;
       }
 
-      bb->set(bbVariable, closest.value());
-      succeed();
+      params.bb.set(bbVariable, closest.value());
+      succeed(params);
     }
 
-    void cancel() override {}
+    void cancel(RunParams) override {}
   };
 
   return std::make_unique<GetClosestNode>(query, std::move(filter), bb_name);
@@ -77,18 +83,45 @@ std::unique_ptr<Node> move_to(std::string_view bb_name, bool flee)
     {
     }
 
-    void execute() override
+    void execute(RunParams params) override
     {
-      entity_.get_mut<ActingNodes>()->actingNodes.emplace(this);
+      bool inserted = params.actors.actingNodes.emplace(this).second;
+      NG_ASSERT(inserted);
     }
 
-    void act() override
+    void act(RunParams params) override
     {
       bool success = false;
+      bool error = false;
+      auto vis = entity_.get<Visibility>();
       entity_.set(
-        [this, &success](Action& action, const Position& pos, Blackboard& bb)
+        [this, &success, &error, params, visibility = vis ? vis->visibility : std::numeric_limits<float>::max()]
+        (Action& action, const Position& pos)
         {
-          auto tgt = bb.get<glm::ivec2>(bbVariable);
+          auto tgtEntity = params.bb.get<flecs::entity>(bbVariable);
+
+          if (!tgtEntity.is_alive())
+          {
+            error = true;
+            return;
+          }
+          
+          auto tgtPos = tgtEntity.get<Position>();
+
+          if (!tgtPos)
+          {
+            error = true;
+            return;
+          }
+          
+          auto tgt = tgtPos->v;
+
+          if (glm::length(glm::vec2(tgt) - glm::vec2(entity_.get<Position>()->v)) > visibility)
+          {
+            error = true;
+            return;
+          }
+
           if (pos.v == tgt)
           {
             success = true;
@@ -99,16 +132,23 @@ std::unique_ptr<Node> move_to(std::string_view bb_name, bool flee)
             action.action = inverse ? inverse_move(dir) : dir;
           }
         });
-      if (success)
+      
+      if (error)
       {
-        cancel();
-        succeed();
+        cancel(params);
+        fail(params);
+      }
+      else if (success)
+      {
+        cancel(params);
+        succeed(params);
       }
     }
 
-    void cancel() override
+    void cancel(RunParams params) override
     {
-      entity_.get_mut<ActingNodes>()->actingNodes.erase(this);
+      auto count = params.actors.actingNodes.erase(this);
+      NG_ASSERT(count == 1);
     }
   };
 

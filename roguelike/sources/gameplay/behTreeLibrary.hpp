@@ -7,10 +7,18 @@
 namespace beh_tree
 {
   
+// Accounts for visibility component if present
 std::unique_ptr<Node> get_closest(
   flecs::query_builder<const Position> query,
   fu2::function<bool(flecs::entity)> filter,
   std::string_view bb_name);
+
+inline std::unique_ptr<Node> get_closest(
+  flecs::query_builder<const Position> query,
+  std::string_view bb_name)
+{
+  return get_closest(query, [](flecs::entity) { return true; }, bb_name);
+}
 
 inline std::unique_ptr<Node> get_closest_enemy(flecs::entity e, std::string_view bb_name)
 {

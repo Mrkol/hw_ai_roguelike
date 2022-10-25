@@ -1,6 +1,7 @@
 #include "entityFactories.hpp"
 #include "components.hpp"
 #include "actions.hpp"
+#include <spdlog/fmt/fmt.h>
 
 
 flecs::entity create_monster(flecs::world& world, int x, int y)
@@ -65,4 +66,22 @@ void create_powerup(flecs::world& world, int x, int y, float amount)
     .set(Position{{x, y}})
     .set(PowerupAmount{amount})
     .set(Color{0xff00ffff});
+}
+
+flecs::entity create_patrool_route(flecs::world& world, std::string_view name,
+  SpriteId sprite, std::span<const glm::ivec2> coords)
+{
+  auto first = world.entity(fmt::format("{}_{}", name, 0).c_str())
+    .set(Sprite{sprite})
+    .set(Position{coords.front()});
+  flecs::entity prev = first;
+  for (std::size_t i = 1; i < coords.size(); ++i)
+  {
+    auto wp = world.entity(fmt::format("{}_{}", name, i).c_str())
+      .set(Sprite{sprite})
+      .set(Position{coords[i]});
+    std::exchange(prev, wp).add<Waypoint>(wp);
+  }
+  prev.add<Waypoint>(first);
+  return first;
 }

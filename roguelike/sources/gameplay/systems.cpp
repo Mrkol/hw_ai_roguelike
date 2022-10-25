@@ -54,8 +54,6 @@ flecs::entity register_systems(flecs::world& world)
   world.component<Sprite>()
     .member<std::size_t>("id");
 
-
-
   world.system<Action, Position, MovePos, const MeleeDamage, const Team>("calculate movement")
     .kind<PerformTurn>()
     .each(
@@ -135,12 +133,12 @@ flecs::entity register_systems(flecs::world& world)
           entity.destruct();
       });
   
-  world.system<const IsPlayer, const Position, Hitpoints, MeleeDamage>()
+  world.system<const Position, Hitpoints, MeleeDamage>()
     .kind<PerformTurn>()
     .each(
       [healPickup = world.query<const Position, const HealAmount>(),
         powerupPickup = world.query<const Position, const PowerupAmount>()]
-      (const IsPlayer&, const Position &pos, Hitpoints &hp, MeleeDamage &dmg)
+      (const Position& pos, Hitpoints& hp, MeleeDamage& dmg)
       {
         healPickup.each([&](flecs::entity entity, const Position &ppos, const HealAmount &amt)
         {

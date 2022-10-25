@@ -64,6 +64,8 @@ struct HealAmount
   float amount = 0.f;
 };
 
+struct Waypoint {};
+
 struct PowerupAmount
 {
   float amount = 0.f;

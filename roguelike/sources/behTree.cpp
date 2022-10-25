@@ -57,41 +57,45 @@ std::unique_ptr<Node> sequence(std::vector<std::unique_ptr<Node>> nodes)
   {
     size_t current = 0;
 
-    void execute() override
+    void execute(RunParams params) override
     {
       NG_ASSERT(current == 0);
 
       if (children.empty())
       {
-        succeed();
+        succeed(params);
         return;
       }
 
-      children.front()->execute();
+      children.front()->execute(params);
     }
     
-    void cancel() override
+    void cancel(RunParams params) override
     {
-      children[current]->cancel();
+      children[current]->cancel(params);
       current = 0;
     }
 
-    void succeeded(Node*) override
+    void succeeded(RunParams params, Node* which) override
     {
+      NG_ASSERT(which == children[current].get());
+
       if (++current == children.size())
       {
-        succeed();
         current = 0;
+        succeed(params);
         return;
       }
 
-      children[current]->execute();
+      children[current]->execute(params);
     }
 
-    void failed(Node*) override
+    void failed(RunParams params, Node* which) override
     {
-      fail();
+      NG_ASSERT(which == children[current].get());
+
       current = 0;
+      fail(params);
     }
   };
 
@@ -105,41 +109,44 @@ std::unique_ptr<Node> select(std::vector<std::unique_ptr<Node>> nodes)
   {
     size_t current = 0;
 
-    void execute() override
+    void execute(RunParams params) override
     {
       NG_ASSERT(current == 0);
 
       if (children.empty())
       {
-        fail();
+        fail(params);
         return;
       }
 
-      children.front()->execute();
+      children.front()->execute(params);
     }
     
-    void cancel() override
+    void cancel(RunParams params) override
     {
-      children[current]->cancel();
+      children[current]->cancel(params);
       current = 0;
     }
 
-    void succeeded(Node*) override
+    void succeeded(RunParams params, Node* which) override
     {
-      succeed();
+      NG_ASSERT(which == children[current].get());
       current = 0;
+      succeed(params);
     }
 
-    void failed(Node*) override
+    void failed(RunParams params, Node* which) override
     {
+      NG_ASSERT(which == children[current].get());
+
       if (++current == children.size())
       {
-        fail();
         current = 0;
+        fail(params);
         return;
       }
 
-      children[current]->execute();
+      children[current]->execute(params);
     }
   };
   
@@ -155,32 +162,35 @@ std::unique_ptr<Node> parallel(std::vector<std::unique_ptr<Node>> nodes)
     size_t finished = 0;
     std::vector<bool> running;
 
-    void execute() override
+    void execute(RunParams params) override
     {
       NG_ASSERT(finished == 0);
       if (children.empty())
       {
-        succeed();
+        succeed(params);
         return;
       }
       
-      running.assign(children.size(), true);
-      for (auto& child : children)
+      for (size_t i = 0; i < children.size(); ++i)
       {
-        child->execute();
+        // A node may fail as soon as it is executed
+        running[i] = true;
+        children[i]->execute(params);
+        if (!running[i])
+          break;
       }
     }
 
-    void cancelChildren()
+    void cancelChildren(RunParams params)
     {
       for (size_t i = 0; i < children.size(); ++i)
         if (running[i])
-          children[i]->cancel();
+          children[i]->cancel(params);
     }
     
-    void cancel() override
+    void cancel(RunParams params) override
     {
-      cancelChildren();
+      cancelChildren(params);
       finished = 0;
       running.assign(children.size(), false);
     }
@@ -194,26 +204,26 @@ std::unique_ptr<Node> parallel(std::vector<std::unique_ptr<Node>> nodes)
       }
     }
 
-    void succeeded(Node* which) override
+    void succeeded(RunParams params, Node* which) override
     {
       childFinished(which);
 
       if (++finished == children.size())
       {
-        succeed();
         finished = 0;
         running.assign(children.size(), false);
+        succeed(params);
       }
     }
 
-    void failed(Node* which) override
+    void failed(RunParams params, Node* which) override
     {
       childFinished(which);
 
-      cancelChildren();
-      fail();
+      cancelChildren(params);
       finished = 0;
       running.assign(children.size(), false);
+      fail(params);
     }
   };
 
@@ -228,39 +238,90 @@ std::unique_ptr<Node> race(std::vector<std::unique_ptr<Node>> nodes)
 {
   struct RaceNode : CompoundNode<RaceNode>
   {
-    void execute() override
-    {
-      for (auto& child : children)
-        child->execute();
-    }
+    std::vector<bool> running;
 
-    void cancelChildren(Node* except)
+    void execute(RunParams params) override
     {
       for (size_t i = 0; i < children.size(); ++i)
-        if (children[i].get() != except)
-          children[i]->cancel();
+      {
+        running[i] = true;
+        children[i]->execute(params);
+        if (!running[i])
+          break;
+      }
+    }
+
+    void cancelChildren(RunParams params, Node* except)
+    {
+      for (size_t i = 0; i < children.size(); ++i)
+        if (children[i].get() != except && running[i])
+          children[i]->cancel(params);
+      running.assign(children.size(), false);
     }
     
-    void cancel() override
+    void cancel(RunParams params) override
     {
-      cancelChildren(nullptr);
+      cancelChildren(params, nullptr);
     }
 
-    void succeeded(Node* which) override
+    void succeeded(RunParams params, Node* which) override
     {
-      cancelChildren(which);
-      succeed();
+      cancelChildren(params, which);
+      succeed(params);
     }
 
-    void failed(Node* which) override
+    void failed(RunParams params, Node* which) override
     {
-      cancelChildren(which);
-      fail();
+      cancelChildren(params, which);
+      fail(params);
     }
   };
 
   auto result = std::make_unique<RaceNode>();
+  result->running.resize(nodes.size(), false);
   std::move(nodes.begin(), nodes.end(), std::back_inserter(result->children));
+  return result;
+}
+
+std::unique_ptr<Node> repeat(std::unique_ptr<Node> node)
+{
+  struct RepeatNode : AdapterNode<RepeatNode>, IActor
+  {
+    bool running = false;
+
+    void execute(RunParams params) override
+    {
+      params.actors.actingNodes.emplace(this);
+      running = true;
+      adapted->execute(params);
+    }
+
+    void act(RunParams params) override
+    {
+      if (!std::exchange(running, true))
+        adapted->execute(params);
+    }
+    
+    void cancel(RunParams params) override
+    {
+      running = false;
+      params.actors.actingNodes.erase(this);
+    }
+
+    void succeeded(RunParams params, Node*) override
+    {
+      running = false;
+    }
+
+    void failed(RunParams params, Node*) override
+    {
+      cancel(params);
+      fail(params);
+    }
+  };
+
+  auto result = std::make_unique<RepeatNode>();
+  result->adapted = std::move(node);
   return result;
 }
 
@@ -271,18 +332,20 @@ std::unique_ptr<Node> detail::predicate_internal(
   {
     fu2::function<bool(flecs::entity)> predicate;
 
-    void execute() override
+    void execute(RunParams params) override
     {
       if (!predicate(entity_))
       {
-        fail();
+        fail(params);
         return;
       }
-      adapted->execute();
+      adapted->execute(params);
     }
 
-    void cancel() override {}
-    
+    void cancel(RunParams params) override
+    {
+      adapted->cancel(params);
+    }
 
     std::unique_ptr<Node> clone() override
     {
@@ -291,8 +354,8 @@ std::unique_ptr<Node> detail::predicate_internal(
       return std::move(result);
     }
     
-    void succeeded(Node*) override { succeed(); }
-    void failed(Node*) override { fail(); }
+    void succeeded(RunParams params, Node*) override { succeed(params); }
+    void failed(RunParams params, Node*) override { fail(params); }
   };
 
   auto result = std::make_unique<PredicateNode>();
@@ -313,31 +376,31 @@ std::unique_ptr<Node> wait_event(flecs::entity ev)
       entity.add(event);
     }
 
-    void execute() override
+    void execute(RunParams params) override
     {
       auto evs = entity_.get<EventList>();
       // Short-circuit for reacting to multiple events within the same frame
       if (evs->events.contains(event))
       {
-        succeed();
+        succeed(params);
         return;
       }
-      entity_.get_mut<ReactingNodes>()->eventReactors.emplace(event, this);
+      params.reactors.eventReactors.emplace(event, this);
     }
 
-    void act() override
+    void act(RunParams params) override
     {
-      cancel();
-      succeed();
+      cancel(params);
+      succeed(params);
     }
 
-    void cancel() override
+    void cancel(RunParams params) override
     {
-      auto reactors = entity_.get_mut<ReactingNodes>();
-      auto[b, e] = reactors->eventReactors.equal_range(event);
+      auto& reactors = params.reactors;
+      auto[b, e] = reactors.eventReactors.equal_range(event);
       while (b != e && b->second != this) ++b;
       NG_ASSERT(b != e);
-      reactors->eventReactors.erase(b);
+      reactors.eventReactors.erase(b);
     }
   };
 
@@ -348,14 +411,63 @@ std::unique_ptr<Node> wait_event(flecs::entity ev)
 
 std::unique_ptr<Node> fail()
 {
-  struct FailNode final : ActionNode<FailNode>
+  struct FailNode final : InstantActionNode<FailNode>
   {
-    void execute() override { fail(); }
-
-    void cancel() override {}
+    void execute(RunParams params) override { fail(params); }
   };
 
   return std::make_unique<FailNode>();
+}
+
+std::unique_ptr<Node> succeed()
+{
+  struct SucceedNode final : InstantActionNode<SucceedNode>
+  {
+    void execute(RunParams params) override { succeed(params); }
+  };
+
+  return std::make_unique<SucceedNode>();
+}
+
+std::unique_ptr<Node> get_pair_target(std::string_view bb_from, flecs::entity rel, std::string_view bb_to)
+{
+  struct GetPairTarget : InstantActionNode<GetPairTarget>
+  {
+    flecs::entity relation;
+    size_t bbFrom;
+    size_t bbTo;
+
+    GetPairTarget(std::string_view bb_from, flecs::entity rel, std::string_view bb_to)
+      : relation{rel}
+      , bbFrom{Blackboard::getId(bb_from)}
+      , bbTo{Blackboard::getId(bb_to)}
+    {
+    }
+
+    void execute(RunParams params) override
+    {
+      auto e = params.bb.get<flecs::entity>(bbFrom);
+
+      if (!e)
+      {
+        fail(params);
+        return;
+      }
+
+      auto target = e.target(relation);
+      
+      if (!target)
+      {
+        fail(params);
+        return;
+      }
+
+      params.bb.set(bbTo, target);
+      succeed(params);
+    }
+  };
+
+  return std::make_unique<GetPairTarget>(bb_from, rel, bb_to);
 }
 
 

@@ -49,6 +49,7 @@ class Game
     auto bearSprite = self().loadSprite(PROJECT_SOURCE_DIR "/roguelike/resources/Bear_Idle_4.png");
     auto knightSprite = self().loadSprite(PROJECT_SOURCE_DIR "/roguelike/resources/ElvenKnight_Idle_1.png");
     auto gnollSprite = self().loadSprite(PROJECT_SOURCE_DIR "/roguelike/resources/GnollBrute_Idle_1.png");
+    auto skull = self().loadSprite(PROJECT_SOURCE_DIR "/roguelike/resources/skull.png");
 
     create_player(world_, 0, 0)
       .set<Sprite>({elfSprite});
@@ -62,26 +63,121 @@ class Game
           std::make_move_iterator(std::end(init)));
       };
 
-    auto test = create_monster(world_, 5, 5).set<Sprite>({banditSprite});
-    test.set<beh_tree::BehTree>(beh_tree::BehTree(test,
-      beh_tree::select(vec(
-          // Prioritize attacking an enemy, while keeping track of health
-          beh_tree::race(vec(
-            beh_tree::sequence(vec(
-              beh_tree::get_closest_enemy(test, "enemy"),
-              beh_tree::move_to("enemy")
+    auto move_to_while_visible = [vec](std::string_view name, bool flee = false)
+      {
+        return beh_tree::race(vec(
+          beh_tree::move_to(name, flee)
+          // This should work, events should also work, but it's 3 am and I want to sleep
+          //beh_tree::repeat(
+          //  beh_tree::predicate([var = Blackboard::getId(name)]
+          //     (const Visibility& vis, const Position& pos, const Blackboard& bb)
+          //    {
+          //      auto tgt = bb.get<flecs::entity>(var);
+          //      if (!tgt.is_alive())
+          //        return false;
+          //
+          //      auto tgtPos = tgt.get<Position>()->v;
+          //      return glm::length(glm::vec2(pos.v) - glm::vec2(tgtPos)) < vis.visibility;
+          //    },
+          //    beh_tree::succeed())
+          //)
+        ));
+      };
+
+    /*{
+      auto mob = create_monster(world_, 5, 5).set<Sprite>({banditSprite});
+      mob.set<beh_tree::BehTree>(beh_tree::BehTree(mob,
+        beh_tree::select(vec(
+            // Prioritize attacking an enemy, while keeping track of health
+            beh_tree::race(vec(
+              beh_tree::sequence(vec(
+                beh_tree::get_closest_enemy(mob, "enemy"),
+                move_to_while_visible("enemy")
+              )),
+              beh_tree::sequence(vec(
+                beh_tree::wait_event(world_.entity("hp_low")),
+                beh_tree::fail()
+              ))
             )),
+            // If attacking an enemy failed, health was low, flee
             beh_tree::sequence(vec(
-              beh_tree::wait_event(world_.entity("hp_low")),
-              beh_tree::fail()
+              beh_tree::get_closest_enemy(mob, "enemy"),
+              move_to_while_visible("enemy", true)
             ))
-          )),
-          // If attacking an enemy failed, health was low, flee
-          beh_tree::sequence(vec(
-            beh_tree::get_closest_enemy(test, "enemy"),
-            beh_tree::move_to("enemy", true)
-          ))
-        ))));
+          ))));
+    }
+
+    {
+      auto mob = create_monster(world_, 5, -3).set<Sprite>({gnollSprite});
+      mob.set<beh_tree::BehTree>(beh_tree::BehTree(mob,
+        beh_tree::select(vec(
+            // Prioritize looting
+            beh_tree::sequence(vec(
+              beh_tree::get_closest(
+                world_.query_builder<const Position>()
+                  .term<HealAmount>().or_()
+                  .term<PowerupAmount>().or_(),
+                "buff"),
+              beh_tree::move_to("buff")
+            )),
+            // If no loot was found nearby, attack
+            beh_tree::sequence(vec(
+              beh_tree::get_closest_enemy(mob, "enemy"),
+              move_to_while_visible("enemy")
+            ))
+          ))));
+    }*/
+
+    {
+      auto mob = create_monster(world_, -7, 7).set<Sprite>({gnollSprite});
+      mob.set<beh_tree::BehTree>(beh_tree::BehTree(mob,
+        beh_tree::select(vec(
+            // Prioritize attacking visible enemies
+            beh_tree::sequence(vec(
+              beh_tree::get_closest_enemy(mob, "enemy"),
+              move_to_while_visible("enemy")
+            )),
+            // Otherwise, patrol
+            beh_tree::sequence(vec(
+              beh_tree::race(vec(
+                beh_tree::move_to("next_wp"),
+                // Interrupt patrol if enemy is near
+                beh_tree::sequence(vec(
+                  beh_tree::wait_event(world_.entity("enemy_near")),
+                  beh_tree::fail()
+                ))
+              )),
+              beh_tree::get_pair_target("next_wp", world_.component<Waypoint>(), "next_wp")
+            ))
+          ))));
+
+      auto firstWp = create_patrool_route(world_, "route", skull, std::array
+        {
+          glm::ivec2{-5, 5},
+          glm::ivec2{-5, 10},
+          glm::ivec2{-10, 5},
+        });
+      mob.get_mut<Blackboard>()->set(Blackboard::getId("next_wp"), firstWp);      
+    }
+
+    auto createBear =
+      [&](int x, int y)
+      {
+        struct BearTag {};
+        auto mob = create_monster(world_, x, y).set<Sprite>({bearSprite});
+        mob.set(Visibility{1});
+        mob.add<BearTag>();
+        mob.set<beh_tree::BehTree>(beh_tree::BehTree(mob,
+          beh_tree::select(vec(
+              // Try to heard onto a target
+              beh_tree::move_to("target"),
+              // Otherwise try to get a visible enemy and heard onto it
+              beh_tree::sequence(vec(
+                beh_tree::get_closest_enemy(mob, "enemy"),
+                beh_tree::broadcast<flecs::entity>(world_.query_builder<Blackboard>().term<BearTag>(), "enemy")
+              ))
+            ))));
+      };
     
     // smTracker_.addSmToEntity(create_monster(world_, 5, 5).set<Sprite>({banditSprite}), "monster");
     // smTracker_.addSmToEntity(create_monster(world_, 10, -5).set<Sprite>({banditSprite}), "monster");
