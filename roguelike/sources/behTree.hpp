@@ -33,13 +33,7 @@ struct ReactingNodes
   std::unordered_multimap<flecs::entity, IActor*> eventReactors;
 };
 
-struct RunParams
-{
-  BehTree& tree;
-  Blackboard& bb;
-  ActingNodes& actors;
-  ReactingNodes& reactors;
-};
+struct RunParams {};
   
 class INodeCaller
 {
@@ -94,7 +88,7 @@ struct ActionNode : Node
 template<class Derived>
 struct InstantActionNode : ActionNode<Derived>
 {
-  void cancel(RunParams params) override {}
+  void cancel(RunParams) override {}
 };
 
 
@@ -108,14 +102,20 @@ public:
   {
     struct Callback : INodeCaller
     {
-      void succeeded(RunParams params, Node*) override
+      void succeeded(RunParams, Node*) override
       {
-        params.tree.running_ = false;
+        e.get([](BehTree& tree)
+          {
+            tree.running_ = false;
+          });
       }
 
-      void failed(RunParams params, Node*) override
+      void failed(RunParams, Node*) override
       {
-        params.tree.running_ = false;
+        e.get([](BehTree& tree)
+          {
+            tree.running_ = false;
+          });
       }
 
       flecs::entity e;

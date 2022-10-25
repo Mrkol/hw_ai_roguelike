@@ -291,7 +291,10 @@ std::unique_ptr<Node> repeat(std::unique_ptr<Node> node)
 
     void execute(RunParams params) override
     {
-      params.actors.actingNodes.emplace(this);
+      entity_.get([this](ActingNodes& a)
+        {
+          a.actingNodes.emplace(this);
+        });
       running = true;
       adapted->execute(params);
     }
@@ -305,7 +308,10 @@ std::unique_ptr<Node> repeat(std::unique_ptr<Node> node)
     void cancel(RunParams params) override
     {
       running = false;
-      params.actors.actingNodes.erase(this);
+      entity_.get([this](ActingNodes& a)
+        {
+          a.actingNodes.erase(this);
+        });
     }
 
     void succeeded(RunParams params, Node*) override
@@ -378,14 +384,10 @@ std::unique_ptr<Node> wait_event(flecs::entity ev)
 
     void execute(RunParams params) override
     {
-      auto evs = entity_.get<EventList>();
-      // Short-circuit for reacting to multiple events within the same frame
-      if (evs->events.contains(event))
-      {
-        succeed(params);
-        return;
-      }
-      params.reactors.eventReactors.emplace(event, this);
+      entity_.get([this](ReactingNodes& r)
+        {
+          r.eventReactors.emplace(event, this);
+        });
     }
 
     void act(RunParams params) override
@@ -396,11 +398,13 @@ std::unique_ptr<Node> wait_event(flecs::entity ev)
 
     void cancel(RunParams params) override
     {
-      auto& reactors = params.reactors;
-      auto[b, e] = reactors.eventReactors.equal_range(event);
-      while (b != e && b->second != this) ++b;
-      NG_ASSERT(b != e);
-      reactors.eventReactors.erase(b);
+      entity_.get([this](ReactingNodes& r)
+        {
+          auto[b, e] = r.eventReactors.equal_range(event);
+          while (b != e && b->second != this) ++b;
+          NG_ASSERT(b != e);
+          r.eventReactors.erase(b);
+        });
     }
   };
 
@@ -446,24 +450,32 @@ std::unique_ptr<Node> get_pair_target(std::string_view bb_from, flecs::entity re
 
     void execute(RunParams params) override
     {
-      auto e = params.bb.get<flecs::entity>(bbFrom);
+      bool failed = false;
+      entity_.get([this, &failed](Blackboard& bb)
+        {
+          auto e = bb.get<flecs::entity>(bbFrom);
 
-      if (!e)
-      {
-        fail(params);
-        return;
-      }
+          if (!e || !e->is_alive())
+          {
+            failed = true;
+            return;
+          }
 
-      auto target = e.target(relation);
+          auto target = e->target(relation);
       
-      if (!target)
-      {
-        fail(params);
-        return;
-      }
+          if (!target)
+          {
+            failed = true;
+            return;
+          }
 
-      params.bb.set(bbTo, target);
-      succeed(params);
+          bb.set(bbTo, target);
+        });
+  
+      if (failed)
+        fail(params);
+      else
+        succeed(params);
     }
   };
 

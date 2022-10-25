@@ -20,12 +20,10 @@ SimulateAiInfo register_ai_systems(flecs::world& world, StateMachineTracker& tra
       beh_tree::ActingNodes, beh_tree::ReactingNodes>
     ("beh_tree_execute")
     .kind(eventsPhase)
-    .term<beh_tree::ActingNodes>().read_write()
-    .term<beh_tree::ReactingNodes>().read_write()
     .each(
-      [](beh_tree::BehTree& tree, Blackboard& bb, beh_tree::ActingNodes& actors, beh_tree::ReactingNodes& reactors)
+      [](beh_tree::BehTree& tree, Blackboard&, beh_tree::ActingNodes&, beh_tree::ReactingNodes&)
       {
-        tree.execute({tree, bb, actors, reactors});
+        tree.execute({});
       });
   
   auto enemyNearEvent = world.entity("enemy_near");
@@ -62,7 +60,7 @@ SimulateAiInfo register_ai_systems(flecs::world& world, StateMachineTracker& tra
     .term(hitpointsLowEvent)
     .each(
       [hitpointsLowEvent]
-      (flecs::entity e, const Hitpoints& hp, const HitpointsThresholds& threshold, EventList& evs)
+      (const Hitpoints& hp, const HitpointsThresholds& threshold, EventList& evs)
       {
         if (hp.hitpoints < threshold.low)
           evs.events.emplace(hitpointsLowEvent);
@@ -74,7 +72,7 @@ SimulateAiInfo register_ai_systems(flecs::world& world, StateMachineTracker& tra
     .term(hitpointsHighEvent)
     .each(
       [hitpointsHighEvent]
-      (flecs::entity e, const Hitpoints& hp, const HitpointsThresholds& threshold, EventList& evs)
+      (const Hitpoints& hp, const HitpointsThresholds& threshold, EventList& evs)
       {
         if (hp.hitpoints > threshold.high)
           evs.events.emplace(hitpointsHighEvent);
@@ -130,12 +128,12 @@ SimulateAiInfo register_ai_systems(flecs::world& world, StateMachineTracker& tra
     .term<beh_tree::ActingNodes>().read_write()
     .each(
       [](const EventList& evs,
-        beh_tree::BehTree& tree, Blackboard& bb, beh_tree::ActingNodes& actors, beh_tree::ReactingNodes& reactors)
+        beh_tree::BehTree&, Blackboard&, beh_tree::ActingNodes&, beh_tree::ReactingNodes& reactors)
       {
         auto copy = reactors.eventReactors;
         for (auto[ev, node] : copy)
           if (evs.events.contains(ev))
-            node->act({tree, bb, actors, reactors});
+            node->act({});
       });
 
 
@@ -149,11 +147,11 @@ SimulateAiInfo register_ai_systems(flecs::world& world, StateMachineTracker& tra
     .kind(stateReactionPhase)
     .term<Action>().read_write()
     .each(
-      [](beh_tree::BehTree& tree, Blackboard& bb, beh_tree::ActingNodes& actors, beh_tree::ReactingNodes& reactors)
+      [](beh_tree::BehTree&, Blackboard&, beh_tree::ActingNodes& actors, beh_tree::ReactingNodes&)
       {
         auto copy = actors.actingNodes;
         for (auto node : copy)
-          node->act({tree, bb, actors, reactors});
+          node->act({});
       });
 
   auto createReactor =

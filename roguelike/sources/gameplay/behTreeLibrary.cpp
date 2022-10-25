@@ -59,7 +59,10 @@ std::unique_ptr<Node> get_closest(
         return;
       }
 
-      params.bb.set(bbVariable, closest.value());
+      entity_.get([this, closest](Blackboard& bb)
+        {
+          bb.set(bbVariable, closest.value());
+        });
       succeed(params);
     }
 
@@ -85,8 +88,10 @@ std::unique_ptr<Node> move_to(std::string_view bb_name, bool flee)
 
     void execute(RunParams params) override
     {
-      bool inserted = params.actors.actingNodes.emplace(this).second;
-      NG_ASSERT(inserted);
+      entity_.get([this](ActingNodes& a)
+        {
+          NG_ASSERT(a.actingNodes.emplace(this).second);
+        });
     }
 
     void act(RunParams params) override
@@ -94,19 +99,19 @@ std::unique_ptr<Node> move_to(std::string_view bb_name, bool flee)
       bool success = false;
       bool error = false;
       auto vis = entity_.get<Visibility>();
-      entity_.set(
-        [this, &success, &error, params, visibility = vis ? vis->visibility : std::numeric_limits<float>::max()]
-        (Action& action, const Position& pos)
+      entity_.get(
+        [this, &success, &error, visibility = vis ? vis->visibility : std::numeric_limits<float>::max()]
+        (Action& action, const Blackboard& bb, const Position& pos)
         {
-          auto tgtEntity = params.bb.get<flecs::entity>(bbVariable);
+          auto tgtEntity = bb.get<flecs::entity>(bbVariable);
 
-          if (!tgtEntity.is_alive())
+          if (!tgtEntity || !tgtEntity->is_alive())
           {
             error = true;
             return;
           }
           
-          auto tgtPos = tgtEntity.get<Position>();
+          auto tgtPos = tgtEntity->get<Position>();
 
           if (!tgtPos)
           {
@@ -115,12 +120,6 @@ std::unique_ptr<Node> move_to(std::string_view bb_name, bool flee)
           }
           
           auto tgt = tgtPos->v;
-
-          if (glm::length(glm::vec2(tgt) - glm::vec2(entity_.get<Position>()->v)) > visibility)
-          {
-            error = true;
-            return;
-          }
 
           if (pos.v == tgt)
           {
@@ -147,8 +146,10 @@ std::unique_ptr<Node> move_to(std::string_view bb_name, bool flee)
 
     void cancel(RunParams params) override
     {
-      auto count = params.actors.actingNodes.erase(this);
-      NG_ASSERT(count == 1);
+      entity_.get([this](ActingNodes& a)
+        {
+          NG_ASSERT(a.actingNodes.erase(this) == 1);
+        });
     }
   };
 

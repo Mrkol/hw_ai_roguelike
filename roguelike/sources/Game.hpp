@@ -47,7 +47,7 @@ class Game
     auto elfSprite = self().loadSprite(PROJECT_SOURCE_DIR "/roguelike/resources/Elf_F_Idle_1.png");
     auto banditSprite = self().loadSprite(PROJECT_SOURCE_DIR "/roguelike/resources/Bandit_Idle_1.png");
     auto bearSprite = self().loadSprite(PROJECT_SOURCE_DIR "/roguelike/resources/Bear_Idle_4.png");
-    auto knightSprite = self().loadSprite(PROJECT_SOURCE_DIR "/roguelike/resources/ElvenKnight_Idle_1.png");
+    //auto knightSprite = self().loadSprite(PROJECT_SOURCE_DIR "/roguelike/resources/ElvenKnight_Idle_1.png");
     auto gnollSprite = self().loadSprite(PROJECT_SOURCE_DIR "/roguelike/resources/GnollBrute_Idle_1.png");
     auto skull = self().loadSprite(PROJECT_SOURCE_DIR "/roguelike/resources/skull.png");
 
@@ -66,25 +66,24 @@ class Game
     auto move_to_while_visible = [vec](std::string_view name, bool flee = false)
       {
         return beh_tree::race(vec(
-          beh_tree::move_to(name, flee)
-          // This should work, events should also work, but it's 3 am and I want to sleep
-          //beh_tree::repeat(
-          //  beh_tree::predicate([var = Blackboard::getId(name)]
-          //     (const Visibility& vis, const Position& pos, const Blackboard& bb)
-          //    {
-          //      auto tgt = bb.get<flecs::entity>(var);
-          //      if (!tgt.is_alive())
-          //        return false;
-          //
-          //      auto tgtPos = tgt.get<Position>()->v;
-          //      return glm::length(glm::vec2(pos.v) - glm::vec2(tgtPos)) < vis.visibility;
-          //    },
-          //    beh_tree::succeed())
-          //)
+          beh_tree::move_to(name, flee),
+          beh_tree::repeat(
+            beh_tree::predicate([var = Blackboard::getId(name)]
+              (const Visibility& vis, const Position& pos, const Blackboard& bb)
+              {
+                auto tgt = bb.get<flecs::entity>(var);
+                if (!tgt || !tgt->is_alive())
+                  return false;
+          
+                auto tgtPos = tgt->get<Position>()->v;
+                return glm::length(glm::vec2(pos.v) - glm::vec2(tgtPos)) < vis.visibility;
+              },
+              beh_tree::succeed())
+          )
         ));
       };
 
-    /*{
+    {
       auto mob = create_monster(world_, 5, 5).set<Sprite>({banditSprite});
       mob.set<beh_tree::BehTree>(beh_tree::BehTree(mob,
         beh_tree::select(vec(
@@ -126,7 +125,7 @@ class Game
               move_to_while_visible("enemy")
             ))
           ))));
-    }*/
+    }
 
     {
       auto mob = create_monster(world_, -7, 7).set<Sprite>({gnollSprite});
@@ -165,12 +164,12 @@ class Game
       {
         struct BearTag {};
         auto mob = create_monster(world_, x, y).set<Sprite>({bearSprite});
-        mob.set(Visibility{1});
+        mob.set(Visibility{2});
         mob.add<BearTag>();
         mob.set<beh_tree::BehTree>(beh_tree::BehTree(mob,
           beh_tree::select(vec(
               // Try to heard onto a target
-              beh_tree::move_to("target"),
+              beh_tree::move_to("enemy"),
               // Otherwise try to get a visible enemy and heard onto it
               beh_tree::sequence(vec(
                 beh_tree::get_closest_enemy(mob, "enemy"),
@@ -178,6 +177,11 @@ class Game
               ))
             ))));
       };
+    
+    createBear(-7, -7);
+    createBear(-7, -10);
+    createBear(-10, -7);
+    createBear(-10, -10);
     
     // smTracker_.addSmToEntity(create_monster(world_, 5, 5).set<Sprite>({banditSprite}), "monster");
     // smTracker_.addSmToEntity(create_monster(world_, 10, -5).set<Sprite>({banditSprite}), "monster");
@@ -194,9 +198,9 @@ class Game
     create_heal(world_, -5, 5, 50.f);
     
 
-    world_.system<const Position, NumActions>()
+    world_.system<const Position>()
       .term<IsPlayer>()
-      .each([this](const Position& pos, NumActions& acts)
+      .each([this](const Position& pos)
         {
           cameraPosition_ = pos.v;
         });

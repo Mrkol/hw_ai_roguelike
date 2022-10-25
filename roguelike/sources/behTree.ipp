@@ -51,12 +51,24 @@ std::unique_ptr<Node> broadcast(flecs::query_builder<Blackboard> query, std::str
 
     void execute(RunParams params) override
     {
+      bool error = false;
       auto myBb = this->entity_.get<Blackboard>();
       targets.each(
-        [myBb, this](Blackboard& bb)
+        [myBb, this, &error](Blackboard& bb)
         {
-          bb.set(bbVariable, myBb->get<T>(bbVariable));
+          auto other = myBb->get<T>(bbVariable);
+          if (!other)
+          {
+            error = true;
+            return;
+          }
+          bb.set(bbVariable, *other);
         });
+
+      if (error)
+        this->fail(params);
+      else
+        this->succeed(params);
     }
   };
 
