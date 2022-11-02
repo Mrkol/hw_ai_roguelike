@@ -11,7 +11,7 @@
 
 struct SimulateAi {};
 
-SimulateAiInfo register_ai_systems(flecs::world& world, StateMachineTracker& tracker)
+SimulateAiInfo register_ai_systems(flecs::world& world)
 {
   auto eventsPhase = world.entity("ai_events_phase").add<SimulateAi>();
 
@@ -104,7 +104,7 @@ SimulateAiInfo register_ai_systems(flecs::world& world, StateMachineTracker& tra
     .term(allyHpHighEvent)
     .term<ClosestVisibleAlly>(flecs::Wildcard)
     .each(
-      [&tracker, allyHpHighEvent]
+      [allyHpHighEvent]
       (flecs::entity e, EventList& evs)
       {
         auto ally = e.target<ClosestVisibleAlly>();

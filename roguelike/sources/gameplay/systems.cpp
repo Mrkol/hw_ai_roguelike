@@ -19,6 +19,8 @@ static Position move_pos(Position pos, ActionType action)
   case ActionType::MOVE_DOWN:
     pos.v.y--;
     break;
+  default:
+    break;
   }
   return pos;
 }

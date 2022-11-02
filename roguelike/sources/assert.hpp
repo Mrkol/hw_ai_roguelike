@@ -4,7 +4,7 @@
 #include <spdlog/spdlog.h>
 
 #if __has_include(<allegro5/allegro_native_dialog.h>)
-#include <allegro5/allegro_native_dialog.h> 
+#include <allegro5/allegro_native_dialog.h>
 #endif
 
 
@@ -26,7 +26,7 @@ struct SourceLocation
 
 }
 
-#define NG_CURRENT_LOCATION detail::SourceLocation{__FILE__, __LINE__, __PRETTY_FUNCTION__}
+#define NG_CURRENT_LOCATION ::detail::SourceLocation{__FILE__, __LINE__, __PRETTY_FUNCTION__}
 
 #else
 #include <source_location>

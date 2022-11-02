@@ -52,11 +52,11 @@ std::unique_ptr<Node> broadcast(flecs::query_builder<Blackboard> query, std::str
     void execute(RunParams params) override
     {
       bool error = false;
-      auto myBb = this->entity_.get<Blackboard>();
+      auto myBb = this->entity_.template get<Blackboard>();
       targets.each(
         [myBb, this, &error](Blackboard& bb)
         {
-          auto other = myBb->get<T>(bbVariable);
+          auto other = myBb->template get<T>(bbVariable);
           if (!other)
           {
             error = true;

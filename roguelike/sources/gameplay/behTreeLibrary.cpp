@@ -86,7 +86,7 @@ std::unique_ptr<Node> move_to(std::string_view bb_name, bool flee)
     {
     }
 
-    void execute(RunParams params) override
+    void execute(RunParams) override
     {
       entity_.get([this](ActingNodes& a)
         {
@@ -110,7 +110,7 @@ std::unique_ptr<Node> move_to(std::string_view bb_name, bool flee)
             error = true;
             return;
           }
-          
+
           auto tgtPos = tgtEntity->get<Position>();
 
           if (!tgtPos)
@@ -118,7 +118,7 @@ std::unique_ptr<Node> move_to(std::string_view bb_name, bool flee)
             error = true;
             return;
           }
-          
+
           auto tgt = tgtPos->v;
 
           if (pos.v == tgt)
@@ -131,7 +131,7 @@ std::unique_ptr<Node> move_to(std::string_view bb_name, bool flee)
             action.action = inverse ? inverse_move(dir) : dir;
           }
         });
-      
+
       if (error)
       {
         cancel(params);
@@ -144,7 +144,7 @@ std::unique_ptr<Node> move_to(std::string_view bb_name, bool flee)
       }
     }
 
-    void cancel(RunParams params) override
+    void cancel(RunParams) override
     {
       entity_.get([this](ActingNodes& a)
         {

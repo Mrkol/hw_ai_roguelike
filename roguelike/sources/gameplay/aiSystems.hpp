@@ -11,4 +11,4 @@ struct SimulateAiInfo
   flecs::entity stateTransitionPhase;
 };
 
-SimulateAiInfo register_ai_systems(flecs::world& world, StateMachineTracker& tracker);
+SimulateAiInfo register_ai_systems(flecs::world& world);

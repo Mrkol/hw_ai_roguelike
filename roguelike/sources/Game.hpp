@@ -4,7 +4,10 @@
 
 #include <glm/glm.hpp>
 #include <function2/function2.hpp>
+#include <spdlog/fmt/fmt.h>
 #include <allegro5/keycodes.h>
+#include <allegro5/allegro5.h>
+
 
 #include "stateMachine.hpp"
 #include "behTree.hpp"
@@ -17,7 +20,7 @@
 #include "gameplay/actions.hpp"
 
 
-ALLEGRO_COLOR colorToAllegro(uint32_t color)
+inline ALLEGRO_COLOR colorToAllegro(uint32_t color)
 {
   return al_map_rgba
     ( (color >> 0)  & 0xff
@@ -34,7 +37,7 @@ class Game
   Game()
     : world_{self().world()}
     , endOfTurnPipeline_{register_systems(world_)}
-    , simulateAiInfo_{register_ai_systems(world_, smTracker_)}
+    , simulateAiInfo_{register_ai_systems(world_)}
     , smTracker_{world_, simulateAiInfo_.simulateAiPipieline, simulateAiInfo_.stateTransitionPhase}
     , drawableQuery_{
       world_.query_builder<const Position>()
@@ -74,7 +77,7 @@ class Game
                 auto tgt = bb.get<flecs::entity>(var);
                 if (!tgt || !tgt->is_alive())
                   return false;
-          
+
                 auto tgtPos = tgt->get<Position>()->v;
                 return glm::length(glm::vec2(pos.v) - glm::vec2(tgtPos)) < vis.visibility;
               },
@@ -84,7 +87,7 @@ class Game
       };
 
     {
-      auto mob = create_monster(world_, 5, 5).set<Sprite>({banditSprite});
+      flecs::entity mob = create_monster(world_, 5, 5).set<Sprite>({banditSprite});
       mob.set<beh_tree::BehTree>(beh_tree::BehTree(mob,
         beh_tree::select(vec(
             // Prioritize attacking an enemy, while keeping track of health
@@ -107,7 +110,7 @@ class Game
     }
 
     {
-      auto mob = create_monster(world_, 5, -3).set<Sprite>({gnollSprite});
+      flecs::entity mob = create_monster(world_, 5, -3).set<Sprite>({gnollSprite});
       mob.set<beh_tree::BehTree>(beh_tree::BehTree(mob,
         beh_tree::select(vec(
             // Prioritize looting
@@ -128,7 +131,7 @@ class Game
     }
 
     {
-      auto mob = create_monster(world_, -7, 7).set<Sprite>({gnollSprite});
+      flecs::entity mob = create_monster(world_, -7, 7).set<Sprite>({gnollSprite});
       mob.set<beh_tree::BehTree>(beh_tree::BehTree(mob,
         beh_tree::select(vec(
             // Prioritize attacking visible enemies
@@ -150,20 +153,20 @@ class Game
             ))
           ))));
 
-      auto firstWp = create_patrool_route(world_, "route", skull, std::array
+      flecs::entity firstWp = create_patrool_route(world_, "route", skull, std::array
         {
           glm::ivec2{-5, 5},
           glm::ivec2{-5, 10},
           glm::ivec2{-10, 5},
         });
-      mob.get_mut<Blackboard>()->set(Blackboard::getId("next_wp"), firstWp);      
+      mob.get_mut<Blackboard>()->set(Blackboard::getId("next_wp"), firstWp);
     }
 
     auto createBear =
       [&](int x, int y)
       {
         struct BearTag {};
-        auto mob = create_monster(world_, x, y).set<Sprite>({bearSprite});
+        flecs::entity mob = create_monster(world_, x, y).set<Sprite>({bearSprite});
         mob.set(Visibility{2});
         mob.add<BearTag>();
         mob.set<beh_tree::BehTree>(beh_tree::BehTree(mob,
@@ -177,7 +180,7 @@ class Game
               ))
             ))));
       };
-    
+
     createBear(-7, -7);
     createBear(-7, -10);
     createBear(-10, -7);
@@ -238,7 +241,7 @@ class Game
 
     bool runAi = false;
     world_.each(
-      [this, &runAi](IsPlayer, NumActions& acts)
+      [&runAi](IsPlayer, NumActions& acts)
       {
         if (acts.curActions >= acts.numActions)
         {
@@ -246,7 +249,7 @@ class Game
           runAi = true;
         }
       });
-    
+
     if (runAi)
     {
       flecs::log::set_level(1);
@@ -266,7 +269,7 @@ class Game
     const int bars = 10;
     for (int i = -bars; i <= bars; ++i)
     {
-      float x = static_cast<float>(i); 
+      float x = static_cast<float>(i);
       auto a = project({-bars, x});
       auto b = project({bars, x});
       al_draw_line(a.x, a.y, b.x, b.y, al_map_rgba(100, 100, 100, 128), 2);
@@ -289,7 +292,7 @@ class Game
               bitmap,
               0, 0, al_get_bitmap_width(bitmap), al_get_bitmap_height(bitmap),
               min.x, min.y, max.x - min.x, max.y - min.y, ALLEGRO_FLIP_VERTICAL);
-        
+
         if (auto hp = e.get<Hitpoints>())
           al_draw_text(self().getFont(), al_map_rgb(255, 255, 255), min.x + 10, max.y - 10, 0,
             fmt::format("HP: {}", hp->hitpoints).c_str());
@@ -298,7 +301,7 @@ class Game
             fmt::format("DMG: {}", dmg->damage).c_str());
       });
   }
-  
+
  private:
   Derived& self() { return *static_cast<Derived*>(this); }
   const Derived& self() const { return *static_cast<const Derived*>(this); }

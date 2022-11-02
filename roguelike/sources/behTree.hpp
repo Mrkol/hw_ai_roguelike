@@ -34,12 +34,14 @@ struct ReactingNodes
 };
 
 struct RunParams {};
-  
+
 class INodeCaller
 {
 public:
   virtual void succeeded(RunParams params, Node* which) = 0;
   virtual void failed(RunParams params, Node* which) = 0;
+
+  virtual ~INodeCaller() = default;
 };
 
 class IActor
@@ -52,7 +54,7 @@ class Node
 {
 public:
   virtual void execute(RunParams params) = 0;
-  
+
   // Invariant: can only be called if execute was called
   // but the caller has not received a succeeded/failed
   // signal yet.
@@ -124,14 +126,14 @@ public:
     auto cb = std::make_unique<Callback>();
     cb->e = entity;
     callback_ = std::move(cb);
-    
+
     root_->connect(entity, callback_.get());
     entity.set<EventList>({})
       .set<Blackboard>({})
       .set<ActingNodes>({})
       .set<ReactingNodes>({});
   }
-  
+
   BehTree(BehTree&&) = default;
   BehTree& operator=(BehTree&&) = default;
   BehTree(const BehTree&) = default;

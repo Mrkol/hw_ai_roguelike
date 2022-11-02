@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(netgames)
+cmake_policy(SET CMP0067 NEW)
+project(netgames C CXX)
+
 
 if(PROJECT_SOURCE_DIR STREQUAL PROJECT_BINARY_DIR)
   message(
@@ -40,10 +42,13 @@ set(CPM_USE_LOCAL_PACKAGES True)
 
 
 
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_STANDARD_REQUIRED True)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
-if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND NOT WIN32)
     add_compile_options(-stdlib=libc++)
     add_link_options(-stdlib=libc++ -lc++abi)
 endif()
@@ -51,10 +56,14 @@ endif()
 include(thirdparty.cmake)
 
 
-if (MSVC)
+if (CMAKE_CXX_COMPILER_FRONTEND_VARIANT MATCHES "MSVC")
     add_compile_options(/W4)
 else()
     add_compile_options(-Wall -Wextra)
+endif()
+
+if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_CXX_COMPILER_FRONTEND_VARIANT MATCHES "MSVC")
+    add_compile_options(/std:c++20 /std:c17)
 endif()
 
 add_subdirectory("roguelike")

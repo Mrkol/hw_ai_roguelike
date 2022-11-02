@@ -22,7 +22,7 @@ struct CompoundNode : Node, INodeCaller
     return std::move(result);
   }
 
-  void connect(flecs::entity entity, INodeCaller* owner)
+  void connect(flecs::entity entity, INodeCaller* owner) override
   {
     Node::connect(entity, owner);
     for (auto& child : children)
@@ -44,7 +44,7 @@ struct AdapterNode : Node, INodeCaller
     return std::move(result);
   }
 
-  void connect(flecs::entity entity, INodeCaller* owner)
+  void connect(flecs::entity entity, INodeCaller* owner) override
   {
     Node::connect(entity, owner);
     adapted->connect(entity, this);
@@ -304,8 +304,8 @@ std::unique_ptr<Node> repeat(std::unique_ptr<Node> node)
       if (!std::exchange(running, true))
         adapted->execute(params);
     }
-    
-    void cancel(RunParams params) override
+
+    void cancel(RunParams) override
     {
       running = false;
       entity_.get([this](ActingNodes& a)
@@ -314,7 +314,7 @@ std::unique_ptr<Node> repeat(std::unique_ptr<Node> node)
         });
     }
 
-    void succeeded(RunParams params, Node*) override
+    void succeeded(RunParams, Node*) override
     {
       running = false;
     }
@@ -382,7 +382,7 @@ std::unique_ptr<Node> wait_event(flecs::entity ev)
       entity.add(event);
     }
 
-    void execute(RunParams params) override
+    void execute(RunParams) override
     {
       entity_.get([this](ReactingNodes& r)
         {
@@ -396,7 +396,7 @@ std::unique_ptr<Node> wait_event(flecs::entity ev)
       succeed(params);
     }
 
-    void cancel(RunParams params) override
+    void cancel(RunParams) override
     {
       entity_.get([this](ReactingNodes& r)
         {
