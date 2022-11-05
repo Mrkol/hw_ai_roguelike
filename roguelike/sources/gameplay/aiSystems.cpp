@@ -25,7 +25,7 @@ SimulateAiInfo register_ai_systems(flecs::world& world)
       {
         tree.execute({});
       });
-  
+
   auto enemyNearEvent = world.entity("enemy_near");
   world.system<EventList>("enemy_near event dispatcher")
     .kind(eventsPhase)
@@ -65,7 +65,7 @@ SimulateAiInfo register_ai_systems(flecs::world& world)
         if (hp.hitpoints < threshold.low)
           evs.events.emplace(hitpointsLowEvent);
       });
-  
+
   auto hitpointsHighEvent = world.entity("hp_high");
   world.system<const Hitpoints, const HitpointsThresholds, EventList>("hp_high event dispatcher")
     .kind(eventsPhase)
@@ -185,7 +185,7 @@ SimulateAiInfo register_ai_systems(flecs::world& world)
            act.action = dirs[dir(engine)];
          }
        });
-  
+
   createReactor.operator()<Action, const Position>("move_to_enemy")
     .term<ClosestVisibleEnemy>(flecs::Wildcard)
     .each(
@@ -198,7 +198,7 @@ SimulateAiInfo register_ai_systems(flecs::world& world)
 
         act.action = move_towards(pos.v, enemy.get<Position>()->v);
       });
-  
+
   createReactor.operator()<Action, const Position>("flee_from_enemy")
     .term<ClosestVisibleEnemy>(flecs::Wildcard)
     .each(
@@ -211,21 +211,21 @@ SimulateAiInfo register_ai_systems(flecs::world& world)
 
         act.action = inverse_move(move_towards(pos.v, enemy.get<Position>()->v));
       });
-  
+
   createReactor.operator()<Action&>("heal")
     .each(
       [](Action& act)
       {
         act.action = ActionType::REGEN;
       });
-  
+
   createReactor.operator()<Action>("heal_ally")
     .each(
       [](Action& act)
       {
         act.action = ActionType::HEAL;
       });
-  
+
   createReactor.operator()<Action, Position>("follow_player")
     .each(
       [playerq = world.query_builder<const Position>().term<IsPlayer>().build()]

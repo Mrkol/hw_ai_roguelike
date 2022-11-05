@@ -96,6 +96,10 @@ class Allegro
           {
             self().mouse(event.mouse.x, event.mouse.y);
           }
+          if constexpr (requires { self().wheel(event.mouse.z); })
+          {
+            self().wheel(event.mouse.z);
+          }
           break;
 
         case ALLEGRO_EVENT_KEY_DOWN:

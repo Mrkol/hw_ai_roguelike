@@ -3,6 +3,7 @@
 #include <vector>
 
 #include <assert.hpp>
+#include <imgui.h>
 
 
 namespace beh_tree
@@ -12,6 +13,19 @@ template<class Derived>
 struct CompoundNode : Node, INodeCaller
 {
   std::vector<std::unique_ptr<Node>> children;
+
+  virtual void debugDraw() const override
+  {
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(running_ ? ImColor(0, 255, 0) : ImColor(255, 255, 255)));
+    bool open = ImGui::TreeNodeEx(fmt::format("{}##{}", typeid(Derived).name(), fmt::ptr(this)).c_str());
+    ImGui::PopStyleColor();
+    if (open)
+    {
+      for (auto& child : children)
+        child->debugDraw();
+      ImGui::TreePop();
+    }
+  }
 
   std::unique_ptr<Node> clone() override
   {
@@ -37,6 +51,18 @@ struct AdapterNode : Node, INodeCaller
 {
   std::unique_ptr<Node> adapted;
 
+  virtual void debugDraw() const override
+  {
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(running_ ? ImColor(0, 255, 0) : ImColor(255, 255, 255)));
+    bool open = ImGui::TreeNodeEx(fmt::format("{}##{}", typeid(Derived).name(), fmt::ptr(this)).c_str());
+    ImGui::PopStyleColor();
+    if (open)
+    {
+      adapted->debugDraw();
+      ImGui::TreePop();
+    }
+  }
+
   std::unique_ptr<Node> clone() override
   {
     std::unique_ptr<Derived> result{new Derived};
@@ -57,7 +83,7 @@ std::unique_ptr<Node> sequence(std::vector<std::unique_ptr<Node>> nodes)
   {
     size_t current = 0;
 
-    void execute(RunParams params) override
+    void executeImpl(RunParams params) override
     {
       NG_ASSERT(current == 0);
 
@@ -69,8 +95,8 @@ std::unique_ptr<Node> sequence(std::vector<std::unique_ptr<Node>> nodes)
 
       children.front()->execute(params);
     }
-    
-    void cancel(RunParams params) override
+
+    void cancelImpl(RunParams params) override
     {
       children[current]->cancel(params);
       current = 0;
@@ -101,7 +127,8 @@ std::unique_ptr<Node> sequence(std::vector<std::unique_ptr<Node>> nodes)
 
   auto result = std::make_unique<SequenceNode>();
   std::move(nodes.begin(), nodes.end(), std::back_inserter(result->children));
-  return result;}
+  return result;
+}
 
 std::unique_ptr<Node> select(std::vector<std::unique_ptr<Node>> nodes)
 {
@@ -109,7 +136,7 @@ std::unique_ptr<Node> select(std::vector<std::unique_ptr<Node>> nodes)
   {
     size_t current = 0;
 
-    void execute(RunParams params) override
+    void executeImpl(RunParams params) override
     {
       NG_ASSERT(current == 0);
 
@@ -121,8 +148,8 @@ std::unique_ptr<Node> select(std::vector<std::unique_ptr<Node>> nodes)
 
       children.front()->execute(params);
     }
-    
-    void cancel(RunParams params) override
+
+    void cancelImpl(RunParams params) override
     {
       children[current]->cancel(params);
       current = 0;
@@ -149,9 +176,111 @@ std::unique_ptr<Node> select(std::vector<std::unique_ptr<Node>> nodes)
       children[current]->execute(params);
     }
   };
-  
+
   auto result = std::make_unique<SelectNode>();
   std::move(nodes.begin(), nodes.end(), std::back_inserter(result->children));
+  return result;
+}
+
+std::unique_ptr<Node> utility_select(std::vector<std::pair<std::unique_ptr<Node>, fu2::function<float(const Blackboard&) const>>> nodes)
+{
+  struct SelectNode : CompoundNode<SelectNode>
+  {
+    std::vector<fu2::function<float(const Blackboard&) const>> utilityFuncs;
+    size_t current = 0;
+
+    virtual void debugDraw() const override
+    {
+      ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(running_ ? ImColor(0, 255, 0) : ImColor(255, 255, 255)));
+      bool open = ImGui::TreeNodeEx(fmt::format("{}##{}", typeid(SelectNode).name(), fmt::ptr(this)).c_str());
+      ImGui::PopStyleColor();
+      if (open)
+      {
+        std::vector<float> utilities;
+        utilities.reserve(utilityFuncs.size());
+        for (auto& func : utilityFuncs)
+          utilities.push_back(func(*entity_.get<Blackboard>()));
+
+        for (size_t i = 0; auto& child : children)
+        {
+          ImGui::Text("Utility: %f", utilities[i++]);
+          child->debugDraw();
+        }
+        ImGui::TreePop();
+      }
+    }
+
+    void executeImpl(RunParams params) override
+    {
+      NG_ASSERT(current == 0);
+
+      if (children.empty())
+      {
+        fail(params);
+        return;
+      }
+
+      using Pair = std::pair<float, std::size_t>;
+      std::vector<Pair> utilities;
+      utilities.reserve(utilityFuncs.size());
+      entity_.get([&utilities, this]
+        (Blackboard& bb)
+        {
+          for (std::size_t i = 0; auto& func : utilityFuncs)
+            utilities.emplace_back(func(bb), i++);
+        });
+
+      std::sort(utilities.begin(), utilities.end(), std::greater<Pair>{});
+
+      auto tmpChildren = std::move(children);
+      auto tmpUtilFuncs = std::move(utilityFuncs);
+      children.resize(tmpChildren.size());
+      utilityFuncs.resize(tmpUtilFuncs.size());
+      for (size_t i = 0; i < utilities.size(); ++i)
+      {
+        children[i] = std::move(tmpChildren[utilities[i].second]);
+        utilityFuncs[i] = std::move(tmpUtilFuncs[utilities[i].second]);
+      }
+
+      children.front()->execute(params);
+    }
+
+    void cancelImpl(RunParams params) override
+    {
+      children[current]->cancel(params);
+      current = 0;
+    }
+
+    void succeeded(RunParams params, Node* which) override
+    {
+      NG_ASSERT(which == children[current].get());
+      current = 0;
+      succeed(params);
+    }
+
+    void failed(RunParams params, Node* which) override
+    {
+      NG_ASSERT(which == children[current].get());
+
+      if (++current == children.size())
+      {
+        current = 0;
+        fail(params);
+        return;
+      }
+
+      children[current]->execute(params);
+    }
+  };
+
+  auto result = std::make_unique<SelectNode>();
+  result->children.reserve(nodes.size());
+  result->utilityFuncs.reserve(nodes.size());
+  for (auto&[node, func] : nodes)
+  {
+    result->children.push_back(std::move(node));
+    result->utilityFuncs.push_back(std::move(func));
+  }
   return result;
 }
 
@@ -162,7 +291,7 @@ std::unique_ptr<Node> parallel(std::vector<std::unique_ptr<Node>> nodes)
     size_t finished = 0;
     std::vector<bool> running;
 
-    void execute(RunParams params) override
+    void executeImpl(RunParams params) override
     {
       NG_ASSERT(finished == 0);
       if (children.empty())
@@ -188,7 +317,7 @@ std::unique_ptr<Node> parallel(std::vector<std::unique_ptr<Node>> nodes)
           children[i]->cancel(params);
     }
     
-    void cancel(RunParams params) override
+    void cancelImpl(RunParams params) override
     {
       cancelChildren(params);
       finished = 0;
@@ -240,7 +369,7 @@ std::unique_ptr<Node> race(std::vector<std::unique_ptr<Node>> nodes)
   {
     std::vector<bool> running;
 
-    void execute(RunParams params) override
+    void executeImpl(RunParams params) override
     {
       for (size_t i = 0; i < children.size(); ++i)
       {
@@ -259,7 +388,7 @@ std::unique_ptr<Node> race(std::vector<std::unique_ptr<Node>> nodes)
       running.assign(children.size(), false);
     }
     
-    void cancel(RunParams params) override
+    void cancelImpl(RunParams params) override
     {
       cancelChildren(params, nullptr);
     }
@@ -289,7 +418,7 @@ std::unique_ptr<Node> repeat(std::unique_ptr<Node> node)
   {
     bool running = false;
 
-    void execute(RunParams params) override
+    void executeImpl(RunParams params) override
     {
       entity_.get([this](ActingNodes& a)
         {
@@ -305,7 +434,7 @@ std::unique_ptr<Node> repeat(std::unique_ptr<Node> node)
         adapted->execute(params);
     }
 
-    void cancel(RunParams) override
+    void cancelImpl(RunParams) override
     {
       running = false;
       entity_.get([this](ActingNodes& a)
@@ -321,7 +450,7 @@ std::unique_ptr<Node> repeat(std::unique_ptr<Node> node)
 
     void failed(RunParams params, Node*) override
     {
-      cancel(params);
+      cancelImpl(params);
       fail(params);
     }
   };
@@ -338,7 +467,7 @@ std::unique_ptr<Node> detail::predicate_internal(
   {
     fu2::function<bool(flecs::entity)> predicate;
 
-    void execute(RunParams params) override
+    void executeImpl(RunParams params) override
     {
       if (!predicate(entity_))
       {
@@ -348,7 +477,7 @@ std::unique_ptr<Node> detail::predicate_internal(
       adapted->execute(params);
     }
 
-    void cancel(RunParams params) override
+    void cancelImpl(RunParams params) override
     {
       adapted->cancel(params);
     }
@@ -382,7 +511,7 @@ std::unique_ptr<Node> wait_event(flecs::entity ev)
       entity.add(event);
     }
 
-    void execute(RunParams) override
+    void executeImpl(RunParams) override
     {
       entity_.get([this](ReactingNodes& r)
         {
@@ -392,11 +521,11 @@ std::unique_ptr<Node> wait_event(flecs::entity ev)
 
     void act(RunParams params) override
     {
-      cancel(params);
+      cancelImpl(params);
       succeed(params);
     }
 
-    void cancel(RunParams) override
+    void cancelImpl(RunParams) override
     {
       entity_.get([this](ReactingNodes& r)
         {
@@ -417,7 +546,7 @@ std::unique_ptr<Node> fail()
 {
   struct FailNode final : InstantActionNode<FailNode>
   {
-    void execute(RunParams params) override { fail(params); }
+    void executeImpl(RunParams params) override { fail(params); }
   };
 
   return std::make_unique<FailNode>();
@@ -427,7 +556,7 @@ std::unique_ptr<Node> succeed()
 {
   struct SucceedNode final : InstantActionNode<SucceedNode>
   {
-    void execute(RunParams params) override { succeed(params); }
+    void executeImpl(RunParams params) override { succeed(params); }
   };
 
   return std::make_unique<SucceedNode>();
@@ -448,7 +577,7 @@ std::unique_ptr<Node> get_pair_target(std::string_view bb_from, flecs::entity re
     {
     }
 
-    void execute(RunParams params) override
+    void executeImpl(RunParams params) override
     {
       bool failed = false;
       entity_.get([this, &failed](Blackboard& bb)
@@ -462,7 +591,7 @@ std::unique_ptr<Node> get_pair_target(std::string_view bb_from, flecs::entity re
           }
 
           auto target = e->target(relation);
-      
+
           if (!target)
           {
             failed = true;

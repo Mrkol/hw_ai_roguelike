@@ -49,7 +49,7 @@ std::unique_ptr<Node> broadcast(flecs::query_builder<Blackboard> query, std::str
     {
     }
 
-    void execute(RunParams params) override
+    void executeImpl(RunParams params) override
     {
       bool error = false;
       auto myBb = this->entity_.template get<Blackboard>();
@@ -73,6 +73,43 @@ std::unique_ptr<Node> broadcast(flecs::query_builder<Blackboard> query, std::str
   };
 
   return std::make_unique<BroadcastNode>(std::move(query), bb_name);
+}
+
+template<class T>
+std::unique_ptr<Node> calculate(
+  fu2::function<std::optional<T>(flecs::entity, const Blackboard&)> func, std::string_view bb_to)
+{
+  struct CalculateNode : InstantActionNode<CalculateNode>
+  {
+    fu2::function<std::optional<T>(flecs::entity, const Blackboard&)> function;
+    size_t bbVariable;
+
+    CalculateNode(fu2::function<std::optional<T>(flecs::entity, const Blackboard&)> func, std::string_view bb_name)
+      : function{std::move(func)}
+      , bbVariable{Blackboard::getId(bb_name)}
+    {
+    }
+
+    void executeImpl(RunParams params) override
+    {
+      bool error = false;
+      this->entity_.template get(
+        [&error, this](Blackboard& bb)
+        {
+          auto val = function(this->entity_, bb);
+          error = !val.has_value();
+          if (!error)
+            bb.set(bbVariable, *val);
+        });
+
+      if (error)
+        this->fail(params);
+      else
+        this->succeed(params);
+    }
+  };
+
+  return std::make_unique<CalculateNode>(std::move(func), bb_to);
 }
 
 } // namespace beh_tree

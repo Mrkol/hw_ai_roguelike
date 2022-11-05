@@ -1,5 +1,7 @@
 #pragma once
 
+#include "assert.hpp"
+#include "imgui.h"
 #include <vector>
 #include <memory>
 #include <unordered_set>
@@ -53,19 +55,26 @@ public:
 class Node
 {
 public:
-  virtual void execute(RunParams params) = 0;
+  void execute(RunParams params)
+  {
+    start();
+    executeImpl(params);
+  }
+
+  void cancel(RunParams params)
+  {
+    stop();
+    cancelImpl(params);
+  }
+
+  virtual void debugDraw() const = 0;
 
   // Invariant: can only be called if execute was called
   // but the caller has not received a succeeded/failed
   // signal yet.
-  virtual void cancel(RunParams params) = 0;
 
   // cloning polymorphic hierarchies is a pain
   virtual std::unique_ptr<Node> clone() = 0;
-
-
-  void succeed(RunParams params) { owner_->succeeded(params, this); }
-  void fail(RunParams params) { owner_->failed(params, this); }
 
   // Called exactly once after tree has been initialized
   virtual void connect(flecs::entity entity, INodeCaller* owner) { entity_ = entity; owner_ = owner; };
@@ -73,6 +82,18 @@ public:
   virtual ~Node() = default;
 
 protected:
+  virtual void executeImpl(RunParams params) = 0;
+  virtual void cancelImpl(RunParams params) = 0;
+
+  void succeed(RunParams params) { stop(); owner_->succeeded(params, this); }
+  void fail(RunParams params) { stop(); owner_->failed(params, this); }
+
+private:
+  void start() { NG_ASSERT(!std::exchange(running_, true)); }
+  void stop() { NG_ASSERT(std::exchange(running_, false)); }
+
+protected:
+  bool running_ = false;
   flecs::entity entity_;
   INodeCaller* owner_{nullptr};
 };
@@ -81,6 +102,12 @@ protected:
 template<class Derived>
 struct ActionNode : Node
 {
+  virtual void debugDraw() const override
+  {
+    ImGui::TextColored(ImVec4(running_ ? ImColor(0, 255, 0) : ImColor(255, 255, 255)),
+      "%s##%p", typeid(Derived).name(), this);
+  }
+
   std::unique_ptr<Node> clone() override
   {
     return std::make_unique<Derived>(static_cast<const Derived&>(*this));
@@ -90,7 +117,7 @@ struct ActionNode : Node
 template<class Derived>
 struct InstantActionNode : ActionNode<Derived>
 {
-  void cancel(RunParams) override {}
+  void cancelImpl(RunParams) override {}
 };
 
 
@@ -139,6 +166,11 @@ public:
   BehTree(const BehTree&) = default;
   BehTree& operator=(const BehTree&) = default;
 
+  void drawDebug() const
+  {
+    root_->debugDraw();
+  }
+
   BehTree copy_to(flecs::entity entity)
   {
     return BehTree(entity, root_->clone());
@@ -159,6 +191,7 @@ private:
 
 std::unique_ptr<Node> sequence(std::vector<std::unique_ptr<Node>> nodes);
 std::unique_ptr<Node> select(std::vector<std::unique_ptr<Node>> nodes);
+std::unique_ptr<Node> utility_select(std::vector<std::pair<std::unique_ptr<Node>, fu2::function<float(const Blackboard&) const>>> nodes);
 std::unique_ptr<Node> parallel(std::vector<std::unique_ptr<Node>> nodes);
 // First child to finish decides the overall result
 std::unique_ptr<Node> race(std::vector<std::unique_ptr<Node>> nodes);
@@ -178,6 +211,8 @@ std::unique_ptr<Node> get_pair_target(std::string_view bb_from, flecs::entity re
 
 template<class T>
 std::unique_ptr<Node> broadcast(flecs::query_builder<Blackboard> query, std::string_view bb_name);
+template<class T>
+std::unique_ptr<Node> calculate(fu2::function<std::optional<T>(flecs::entity, const Blackboard&)> func, std::string_view bb_to);
 
 } // namespace beh_tree
 

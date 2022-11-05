@@ -17,17 +17,15 @@ public:
   Application(int, char**)
   {
   }
-  
+
   void drawGui()
   {
-    ImGui::Begin("Test");
-    ImGui::Text("Hi!");
-    ImGui::End();
+    Game::drawGui();
   }
-  
+
   void draw()
   {
-    float scale = 0.05f * (kWidth + kHeight) / 2.f;
+    float scale = camScale * 0.05f * (kWidth + kHeight) / 2.f;
 
     auto playerPos = Game::cameraPos();
     playerPos.y = -playerPos.y;
@@ -57,6 +55,9 @@ public:
   {
     exit_ = true;
   }
+
+public:
+  float camScale = 1.f;
 
 private:
   bool exit_ = false;

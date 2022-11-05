@@ -4,11 +4,14 @@
 
 #include <glm/glm.hpp>
 #include <function2/function2.hpp>
+#include <limits>
+#include <optional>
 #include <spdlog/fmt/fmt.h>
 #include <allegro5/keycodes.h>
 #include <allegro5/allegro5.h>
 
 
+#include "imgui.h"
 #include "stateMachine.hpp"
 #include "behTree.hpp"
 
@@ -48,9 +51,9 @@ class Game
   {
     smTracker_.load(PROJECT_SOURCE_DIR "/roguelike/resources/monsters.yml");
     auto elfSprite = self().loadSprite(PROJECT_SOURCE_DIR "/roguelike/resources/Elf_F_Idle_1.png");
-    auto banditSprite = self().loadSprite(PROJECT_SOURCE_DIR "/roguelike/resources/Bandit_Idle_1.png");
-    auto bearSprite = self().loadSprite(PROJECT_SOURCE_DIR "/roguelike/resources/Bear_Idle_4.png");
-    //auto knightSprite = self().loadSprite(PROJECT_SOURCE_DIR "/roguelike/resources/ElvenKnight_Idle_1.png");
+    // auto banditSprite = self().loadSprite(PROJECT_SOURCE_DIR "/roguelike/resources/Bandit_Idle_1.png");
+    // auto bearSprite = self().loadSprite(PROJECT_SOURCE_DIR "/roguelike/resources/Bear_Idle_4.png");
+    // auto knightSprite = self().loadSprite(PROJECT_SOURCE_DIR "/roguelike/resources/ElvenKnight_Idle_1.png");
     auto gnollSprite = self().loadSprite(PROJECT_SOURCE_DIR "/roguelike/resources/GnollBrute_Idle_1.png");
     auto skull = self().loadSprite(PROJECT_SOURCE_DIR "/roguelike/resources/skull.png");
 
@@ -65,13 +68,21 @@ class Game
           std::make_move_iterator(std::begin(init)),
           std::make_move_iterator(std::end(init)));
       };
+    auto pairVec = [](auto... vs)
+      {
+        std::pair<std::unique_ptr<beh_tree::Node>, fu2::function<float(const Blackboard&) const>> init[] = { std::move(vs)... };
+        return std::vector(
+          std::make_move_iterator(std::begin(init)),
+          std::make_move_iterator(std::end(init)));
+      };
 
-    auto move_to_while_visible = [vec](std::string_view name, bool flee = false)
+    auto move_to_while_visible = [vec](std::string_view name, bool flee = false, bool inverse = false)
       {
         return beh_tree::race(vec(
           beh_tree::move_to(name, flee),
           beh_tree::repeat(
-            beh_tree::predicate([var = Blackboard::getId(name)]
+            beh_tree::predicate(
+              [var = Blackboard::getId(name), inverse]
               (const Visibility& vis, const Position& pos, const Blackboard& bb)
               {
                 auto tgt = bb.get<flecs::entity>(var);
@@ -79,35 +90,35 @@ class Game
                   return false;
 
                 auto tgtPos = tgt->get<Position>()->v;
-                return glm::length(glm::vec2(pos.v) - glm::vec2(tgtPos)) < vis.visibility;
+                return (glm::length(glm::vec2(pos.v) - glm::vec2(tgtPos)) < vis.visibility) != inverse;
               },
               beh_tree::succeed())
           )
         ));
       };
 
-    {
-      flecs::entity mob = create_monster(world_, 5, 5).set<Sprite>({banditSprite});
-      mob.set<beh_tree::BehTree>(beh_tree::BehTree(mob,
-        beh_tree::select(vec(
-            // Prioritize attacking an enemy, while keeping track of health
-            beh_tree::race(vec(
-              beh_tree::sequence(vec(
-                beh_tree::get_closest_enemy(mob, "enemy"),
-                move_to_while_visible("enemy")
-              )),
-              beh_tree::sequence(vec(
-                beh_tree::wait_event(world_.entity("hp_low")),
-                beh_tree::fail()
-              ))
-            )),
-            // If attacking an enemy failed, health was low, flee
-            beh_tree::sequence(vec(
-              beh_tree::get_closest_enemy(mob, "enemy"),
-              move_to_while_visible("enemy", true)
-            ))
-          ))));
-    }
+    // {
+    //   flecs::entity mob = create_monster(world_, 5, 5).set<Sprite>({banditSprite});
+    //   mob.set<beh_tree::BehTree>(beh_tree::BehTree(mob,
+    //     beh_tree::select(vec(
+    //         // Prioritize attacking an enemy, while keeping track of health
+    //         beh_tree::race(vec(
+    //           beh_tree::sequence(vec(
+    //             beh_tree::get_closest_enemy(mob, "enemy"),
+    //             move_to_while_visible("enemy")
+    //           )),
+    //           beh_tree::sequence(vec(
+    //             beh_tree::wait_event(world_.entity("hp_low")),
+    //             beh_tree::fail()
+    //           ))
+    //         )),
+    //         // If attacking an enemy failed, health was low, flee
+    //         beh_tree::sequence(vec(
+    //           beh_tree::get_closest_enemy(mob, "enemy"),
+    //           move_to_while_visible("enemy", true)
+    //         ))
+    //       ))));
+    // }
 
     {
       flecs::entity mob = create_monster(world_, 5, -3).set<Sprite>({gnollSprite});
@@ -130,67 +141,152 @@ class Game
           ))));
     }
 
-    {
-      flecs::entity mob = create_monster(world_, -7, 7).set<Sprite>({gnollSprite});
-      mob.set<beh_tree::BehTree>(beh_tree::BehTree(mob,
-        beh_tree::select(vec(
-            // Prioritize attacking visible enemies
-            beh_tree::sequence(vec(
-              beh_tree::get_closest_enemy(mob, "enemy"),
-              move_to_while_visible("enemy")
-            )),
-            // Otherwise, patrol
-            beh_tree::sequence(vec(
-              beh_tree::race(vec(
-                beh_tree::move_to("next_wp"),
-                // Interrupt patrol if enemy is near
-                beh_tree::sequence(vec(
-                  beh_tree::wait_event(world_.entity("enemy_near")),
-                  beh_tree::fail()
-                ))
-              )),
-              beh_tree::get_pair_target("next_wp", world_.component<Waypoint>(), "next_wp")
-            ))
-          ))));
+    // {
+    //   flecs::entity mob = create_monster(world_, -7, 7).set<Sprite>({gnollSprite});
+    //   mob.set<beh_tree::BehTree>(beh_tree::BehTree(mob,
+    //     beh_tree::select(vec(
+    //         // Prioritize attacking visible enemies
+    //         beh_tree::sequence(vec(
+    //           beh_tree::get_closest_enemy(mob, "enemy"),
+    //           move_to_while_visible("enemy")
+    //         )),
+    //         // Otherwise, patrol
+    //         beh_tree::sequence(vec(
+    //           beh_tree::race(vec(
+    //             beh_tree::move_to("next_wp"),
+    //             // Interrupt patrol if enemy is near
+    //             beh_tree::sequence(vec(
+    //               beh_tree::wait_event(world_.entity("enemy_near")),
+    //               beh_tree::fail()
+    //             ))
+    //           )),
+    //           beh_tree::get_pair_target("next_wp", world_.component<Waypoint>(), "next_wp")
+    //         ))
+    //       ))));
 
-      flecs::entity firstWp = create_patrool_route(world_, "route", skull, std::array
-        {
-          glm::ivec2{-5, 5},
-          glm::ivec2{-5, 10},
-          glm::ivec2{-10, 5},
-        });
-      mob.get_mut<Blackboard>()->set(Blackboard::getId("next_wp"), firstWp);
-    }
+    //   flecs::entity firstWp = create_patrool_route(world_, "route", skull, std::array
+    //     {
+    //       glm::ivec2{-5, 5},
+    //       glm::ivec2{-5, 10},
+    //       glm::ivec2{-10, 5},
+    //     });
+    //   mob.get_mut<Blackboard>()->set(Blackboard::getId("next_wp"), firstWp);
+    // }
 
-    auto createBear =
-      [&](int x, int y)
+    // auto createBear =
+    //   [&](int x, int y)
+    //   {
+    //     struct BearTag {};
+    //     flecs::entity mob = create_monster(world_, x, y).set<Sprite>({bearSprite});
+    //     mob.set(Visibility{2});
+    //     mob.add<BearTag>();
+    //     mob.set<beh_tree::BehTree>(beh_tree::BehTree(mob,
+    //       beh_tree::select(vec(
+    //           // Try to heard onto a target
+    //           beh_tree::move_to("enemy"),
+    //           // Otherwise try to get a visible enemy and heard onto it
+    //           beh_tree::sequence(vec(
+    //             beh_tree::get_closest_enemy(mob, "enemy"),
+    //             beh_tree::broadcast<flecs::entity>(world_.query_builder<Blackboard>().term<BearTag>(), "enemy")
+    //           ))
+    //         ))));
+    //   };
+
+    // createBear(-7, -7);
+    // createBear(-7, -10);
+    // createBear(-10, -7);
+    // createBear(-10, -10);
+
+    auto calculate_dist = [](std::string_view from, std::string_view to)
       {
-        struct BearTag {};
-        flecs::entity mob = create_monster(world_, x, y).set<Sprite>({bearSprite});
-        mob.set(Visibility{2});
-        mob.add<BearTag>();
-        mob.set<beh_tree::BehTree>(beh_tree::BehTree(mob,
-          beh_tree::select(vec(
-              // Try to heard onto a target
-              beh_tree::move_to("enemy"),
-              // Otherwise try to get a visible enemy and heard onto it
-              beh_tree::sequence(vec(
-                beh_tree::get_closest_enemy(mob, "enemy"),
-                beh_tree::broadcast<flecs::entity>(world_.query_builder<Blackboard>().term<BearTag>(), "enemy")
-              ))
-            ))));
+        return beh_tree::calculate<float>(
+          [f = Blackboard::getId(from)]
+          (flecs::entity e, const Blackboard& bb) -> std::optional<float>
+          {
+            auto o = bb.get<flecs::entity>(f);
+            if (!o)
+              return std::nullopt;
+            return glm::length(glm::vec2(e.get<Position>()->v - o->get<Position>()->v));
+          }, to);
       };
 
-    createBear(-7, -7);
-    createBear(-7, -10);
-    createBear(-10, -7);
-    createBear(-10, -10);
-    
+    flecs::entity ant_home = world_.entity()
+      .set<Position>(Position{{5, 5}})
+      .set<Sprite>(Sprite{skull});
+
+    auto make_ant =
+      [&, this](int x, int y)
+      {
+        auto maxVisCalculator = [](flecs::entity e, const Blackboard&)
+          { return std::optional{e.get<Visibility>()->visibility}; };
+        flecs::entity mob = create_monster(world_, x, y).set<Sprite>({gnollSprite});
+        mob.set<beh_tree::BehTree>(beh_tree::BehTree(mob,
+          beh_tree::sequence(vec
+            ( calculate_dist("home", "home_dist")
+            , beh_tree::select(vec
+              ( beh_tree::sequence(vec
+                ( beh_tree::get_closest_enemy(mob, "enemy")
+                , calculate_dist("enemy", "enemy_dist")
+                ))
+              , beh_tree::calculate<float>(maxVisCalculator, "enemy_dist")
+              ))
+            , beh_tree::select(vec
+              ( beh_tree::sequence(vec
+                ( beh_tree::get_closest_ally(mob, "ally")
+                , calculate_dist("ally", "ally_dist")
+                ))
+              , beh_tree::calculate<float>(maxVisCalculator, "ally_dist")
+              ))
+            , beh_tree::utility_select(pairVec
+              ( std::make_pair // 1. Wander
+                ( beh_tree::wander_once()
+                , [ allyDist = Blackboard::getId("ally_dist")
+                  , enemyDist = Blackboard::getId("enemy_dist")
+                  , homeDist = Blackboard::getId("home_dist")
+                  ]
+                  (const Blackboard& bb)
+                  {
+                    return 6 - *bb.get<float>(homeDist) - *bb.get<float>(allyDist);
+                  }
+                )
+              , std::make_pair // 2. Flee back home
+                ( beh_tree::move_to_once("home")
+                , [ allyDist = Blackboard::getId("ally_dist")
+                  , enemyDist = Blackboard::getId("enemy_dist")
+                  , homeDist = Blackboard::getId("home_dist")
+                  ]
+                  (const Blackboard& bb)
+                  {
+                    return *bb.get<float>(allyDist) + *bb.get<float>(homeDist);
+                  }
+                )
+              , std::make_pair // 3. Attack
+                ( beh_tree::move_to_once("enemy")
+                , [ allyDist = Blackboard::getId("ally_dist")
+                  , enemyDist = Blackboard::getId("enemy_dist")
+                  , homeDist = Blackboard::getId("home_dist")
+                  ]
+                  (const Blackboard& bb)
+                  {
+                    return 8 - *bb.get<float>(homeDist) - *bb.get<float>(enemyDist);
+                  }
+                )
+              ))
+            ))
+          ));
+        mob.get_mut<Blackboard>()->set(Blackboard::getId("home"), ant_home);
+      };
+
+    make_ant(6, 7);
+    make_ant(4, 7);
+    make_ant(5, 3);
+    make_ant(6, 4);
+
     // smTracker_.addSmToEntity(create_monster(world_, 5, 5).set<Sprite>({banditSprite}), "monster");
     // smTracker_.addSmToEntity(create_monster(world_, 10, -5).set<Sprite>({banditSprite}), "monster");
     // smTracker_.addSmToEntity(create_monster(world_, -5, -5).set<Sprite>({gnollSprite}), "berserker");
     // smTracker_.addSmToEntity(create_monster(world_, -5, 5).set<Sprite>({bearSprite}), "healer");
-    // 
+    //
     // smTracker_.addSmToEntity(create_friend(world_, 1, 1).set<Sprite>({knightSprite}), "knight_healer");
 
     create_powerup(world_, 7, 7, 10.f);
@@ -199,7 +295,7 @@ class Game
 
     create_heal(world_, -5, -5, 50.f);
     create_heal(world_, -5, 5, 50.f);
-    
+
 
     world_.system<const Position>()
       .term<IsPlayer>()
@@ -207,6 +303,11 @@ class Game
         {
           cameraPosition_ = pos.v;
         });
+  }
+
+  void wheel(float z)
+  {
+    self().camScale = std::exp(z / 10.f);
   }
 
   void keyDown(int key)
@@ -225,6 +326,9 @@ class Game
       break;
     case ALLEGRO_KEY_RIGHT:
       action = ActionType::MOVE_RIGHT;
+      break;
+    case ALLEGRO_KEY_SPACE:
+      action = ActionType::NOP;
       break;
 
     default:
@@ -262,6 +366,23 @@ class Game
   glm::vec2 cameraPos() const
   {
     return cameraPosition_;
+  }
+
+  void drawGui()
+  {
+    static auto query = world_.query<beh_tree::BehTree>();
+
+    ImGui::Begin("BehTrees");
+    query.each([](flecs::entity e, const beh_tree::BehTree& bt)
+      {
+        auto name = e.name();
+        if (ImGui::TreeNode(name.length() == 0 ? fmt::format("{}", e.id()).c_str() : name.c_str()))
+        {
+          bt.drawDebug();
+          ImGui::TreePop();
+        }
+      });
+    ImGui::End();
   }
 
   void draw(fu2::unique_function<glm::vec2(glm::vec2)> project)
@@ -314,7 +435,7 @@ class Game
   StateMachineTracker smTracker_;
 
   glm::vec2 cameraPosition_;
-  
+
   flecs::query<const Position> drawableQuery_;
   flecs::query<const Position, const NumActions> playerQuery_;
 };
