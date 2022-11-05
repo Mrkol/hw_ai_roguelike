@@ -1,6 +1,7 @@
 #include <behTree.hpp>
 
 #include <vector>
+#include <random>
 
 #include <assert.hpp>
 #include <imgui.h>
@@ -184,10 +185,16 @@ std::unique_ptr<Node> select(std::vector<std::unique_ptr<Node>> nodes)
 
 std::unique_ptr<Node> utility_select(std::vector<std::pair<std::unique_ptr<Node>, fu2::function<float(const Blackboard&) const>>> nodes)
 {
+  static constexpr float PER_EXECUTE_BIAS_INCREASE = 2.0f;
+  static constexpr float PER_EXECUTE_BIAS_DECREASE = 1.0f;
+
   struct SelectNode : CompoundNode<SelectNode>
   {
     std::vector<fu2::function<float(const Blackboard&) const>> utilityFuncs;
-    size_t current = 0;
+    std::vector<float> biases;
+    std::unordered_map<std::size_t, float> leftToExecute;
+    std::size_t currentlyExecuting = 0;
+
 
     virtual void debugDraw() const override
     {
@@ -203,7 +210,9 @@ std::unique_ptr<Node> utility_select(std::vector<std::pair<std::unique_ptr<Node>
 
         for (size_t i = 0; auto& child : children)
         {
-          ImGui::Text("Utility: %f", utilities[i++]);
+          ImGui::Text("Utility: %f - %f = %f",
+            utilities[i], biases[i], std::max(0.f, utilities[i] - biases[i]));
+          ++i;
           child->debugDraw();
         }
         ImGui::TreePop();
@@ -212,7 +221,7 @@ std::unique_ptr<Node> utility_select(std::vector<std::pair<std::unique_ptr<Node>
 
     void executeImpl(RunParams params) override
     {
-      NG_ASSERT(current == 0);
+      NG_ASSERT(leftToExecute.size() == 0);
 
       if (children.empty())
       {
@@ -220,62 +229,69 @@ std::unique_ptr<Node> utility_select(std::vector<std::pair<std::unique_ptr<Node>
         return;
       }
 
-      using Pair = std::pair<float, std::size_t>;
-      std::vector<Pair> utilities;
-      utilities.reserve(utilityFuncs.size());
-      entity_.get([&utilities, this]
+      for (auto& bias : biases)
+        bias = bias > PER_EXECUTE_BIAS_DECREASE ? bias - PER_EXECUTE_BIAS_DECREASE : 0;
+
+      leftToExecute.reserve(utilityFuncs.size());
+      entity_.get([this]
         (Blackboard& bb)
         {
           for (std::size_t i = 0; auto& func : utilityFuncs)
-            utilities.emplace_back(func(bb), i++);
+          {
+            leftToExecute.emplace(i, func(bb) + biases[i]);
+            ++i;
+          }
         });
 
-      std::sort(utilities.begin(), utilities.end(), std::greater<Pair>{});
+      children[pickChild()]->execute(params);
+    }
 
-      auto tmpChildren = std::move(children);
-      auto tmpUtilFuncs = std::move(utilityFuncs);
-      children.resize(tmpChildren.size());
-      utilityFuncs.resize(tmpUtilFuncs.size());
-      for (size_t i = 0; i < utilities.size(); ++i)
-      {
-        children[i] = std::move(tmpChildren[utilities[i].second]);
-        utilityFuncs[i] = std::move(tmpUtilFuncs[utilities[i].second]);
-      }
+    std::size_t pickChild()
+    {
+      static std::default_random_engine eng;
 
-      children.front()->execute(params);
+      std::vector<float> weights;
+      for (auto[i, w] : leftToExecute)
+        weights.emplace_back(std::max(0.f, w - biases[i]));
+      std::discrete_distribution<std::size_t> distr(weights.begin(), weights.end());
+
+      currentlyExecuting = distr(eng);
+      biases[currentlyExecuting] += PER_EXECUTE_BIAS_INCREASE;
+      leftToExecute.erase(currentlyExecuting);
+      return currentlyExecuting;
     }
 
     void cancelImpl(RunParams params) override
     {
-      children[current]->cancel(params);
-      current = 0;
+      children[currentlyExecuting]->cancel(params);
+      leftToExecute.clear();
     }
 
     void succeeded(RunParams params, Node* which) override
     {
-      NG_ASSERT(which == children[current].get());
-      current = 0;
+      NG_ASSERT(which == children[currentlyExecuting].get());
+      leftToExecute.clear();
       succeed(params);
     }
 
     void failed(RunParams params, Node* which) override
     {
-      NG_ASSERT(which == children[current].get());
+      NG_ASSERT(which == children[currentlyExecuting].get());
 
-      if (++current == children.size())
+      if (leftToExecute.empty())
       {
-        current = 0;
         fail(params);
         return;
       }
 
-      children[current]->execute(params);
+      children[pickChild()]->execute(params);
     }
   };
 
   auto result = std::make_unique<SelectNode>();
   result->children.reserve(nodes.size());
   result->utilityFuncs.reserve(nodes.size());
+  result->biases.resize(nodes.size(), 0);
   for (auto&[node, func] : nodes)
   {
     result->children.push_back(std::move(node));

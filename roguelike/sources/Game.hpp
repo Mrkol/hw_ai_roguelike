@@ -275,12 +275,16 @@ class Game
             ))
           ));
         mob.get_mut<Blackboard>()->set(Blackboard::getId("home"), ant_home);
+        mob.get_mut<Hitpoints>()->hitpoints = 25;
       };
 
-    make_ant(6, 7);
-    make_ant(4, 7);
-    make_ant(5, 3);
-    make_ant(6, 4);
+    for (int i = 0; i < 4; ++i)
+    {
+      make_ant(6, 7);
+      make_ant(4, 7);
+      make_ant(5, 3);
+      make_ant(6, 4);
+    }
 
     // smTracker_.addSmToEntity(create_monster(world_, 5, 5).set<Sprite>({banditSprite}), "monster");
     // smTracker_.addSmToEntity(create_monster(world_, 10, -5).set<Sprite>({banditSprite}), "monster");
