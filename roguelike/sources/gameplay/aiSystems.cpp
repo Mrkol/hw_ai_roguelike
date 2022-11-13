@@ -1,12 +1,17 @@
 #include "aiSystems.hpp"
 
+#include <algorithm>
+#include <cmath>
 #include <random>
 
 #include <fmt/format.h>
 
 #include <behTree.hpp>
+#include <variant>
+#include "blackboard.hpp"
 #include "components.hpp"
 #include "actions.hpp"
+#include "gameplay/dungeon/dmaps.hpp"
 
 
 struct SimulateAi {};
@@ -164,6 +169,37 @@ SimulateAiInfo register_ai_systems(flecs::world& world)
         .term(flecs::Wildcard, state)
         .term(state).optional().read();
     };
+
+  world.system<Action, const Position, const Blackboard, const SmartMovement>("resolve smart movement")
+    .kind(stateReactionPhase)
+    .each(
+      [](flecs::entity e, Action& action, Position pos, const Blackboard& bb, const SmartMovement& movement)
+      {
+        std::array<float, 5> neighborWeights{};
+        const std::array<ActionType, 5> neighborDir
+          {ActionType::NOP, ActionType::MOVE_UP, ActionType::MOVE_DOWN, ActionType::MOVE_LEFT, ActionType::MOVE_RIGHT};
+        for (size_t i = 0; i < 5; ++i)
+        {
+          auto samplePos = move(pos.v, neighborDir[i]);
+          for (auto&[dmapName, coeff, bbCoeffName, power] : movement.potential)
+          {
+            auto dmapEntity = e.world().lookup(dmapName.c_str());
+            NG_ASSERT(dmapEntity);
+            auto dmap = dmapEntity.get<dungeon::dmaps::Dmap>();
+            NG_ASSERT(dmap);
+            auto sample = dmap->view(samplePos.y, samplePos.x);
+
+            auto maybeBbCoeff = bbCoeffName.empty() ? std::nullopt : bb.get<float>(Blackboard::getId(bbCoeffName));
+
+            if (sample >= dungeon::dmaps::INF)
+              neighborWeights[i] = dungeon::dmaps::INF;
+            else
+              neighborWeights[i] += (maybeBbCoeff ? *maybeBbCoeff : 1.f) * coeff * std::pow(sample, power);
+          }
+        }
+        auto minIdx = std::min_element(neighborWeights.begin(), neighborWeights.end()) - neighborWeights.begin();
+        action.action = neighborDir[minIdx];
+      });
 
   createReactor.operator()<Action, const Position, const PatrolPos>("patrol")
     .each(

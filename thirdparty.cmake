@@ -107,3 +107,9 @@ CPMAddPackage(
     GITHUB_REPOSITORY "SanderMertens/flecs"
     GIT_TAG master
 )
+
+CPMAddPackage(
+    NAME mdspan
+    GITHUB_REPOSITORY "kokkos/mdspan"
+    GIT_TAG stable
+)

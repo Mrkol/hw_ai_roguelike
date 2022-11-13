@@ -35,3 +35,25 @@ inline ActionType inverse_move(ActionType move)
          move == ActionType::MOVE_UP    ? ActionType::MOVE_DOWN :
          move == ActionType::MOVE_DOWN  ? ActionType::MOVE_UP : move;
 }
+
+inline glm::ivec2 move(glm::ivec2 pos, ActionType action)
+{
+  switch (action)
+  {
+  case ActionType::MOVE_LEFT:
+    pos.x--;
+    break;
+  case ActionType::MOVE_RIGHT:
+    pos.x++;
+    break;
+  case ActionType::MOVE_UP:
+    pos.y++;
+    break;
+  case ActionType::MOVE_DOWN:
+    pos.y--;
+    break;
+  default:
+    break;
+  }
+  return pos;
+}

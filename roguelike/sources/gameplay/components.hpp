@@ -1,6 +1,9 @@
 #pragma once
 
+#include <vector>
 #include <optional>
+#include <variant>
+#include <string>
 
 #include <glm/glm.hpp>
 
@@ -86,4 +89,17 @@ struct IsPlayer {};
 struct Team
 {
   int team = 0;
+};
+
+struct SmartMovement
+{
+  struct Summand
+  {
+    std::string dmap;
+    float coefficient{1.f};
+    std::string bbVariableCoefficient;
+    float power{1};
+  };
+
+  std::vector<Summand> potential;
 };

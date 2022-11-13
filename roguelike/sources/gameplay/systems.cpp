@@ -1,29 +1,13 @@
 #include "systems.hpp"
+#include "blackboard.hpp"
 #include "components.hpp"
 #include "actions.hpp"
+#include "dungeon/dungeon.hpp"
+#include "dungeon/dungeonUtils.hpp"
+#include "gameplay/dungeon/dungeon.hpp"
+#include "gameplay/dungeon/dungeonUtils.hpp"
+#include "gameplay/dungeon/dmaps.hpp"
 
-
-static Position move_pos(Position pos, ActionType action)
-{
-  switch (action)
-  {
-  case ActionType::MOVE_LEFT:
-    pos.v.x--;
-    break;
-  case ActionType::MOVE_RIGHT:
-    pos.v.x++;
-    break;
-  case ActionType::MOVE_UP:
-    pos.v.y++;
-    break;
-  case ActionType::MOVE_DOWN:
-    pos.v.y--;
-    break;
-  default:
-    break;
-  }
-  return pos;
-}
 
 struct PerformTurn {};
 
@@ -59,10 +43,12 @@ flecs::entity register_systems(flecs::world& world)
   world.system<Action, Position, MovePos, const MeleeDamage, const Team>("calculate movement")
     .kind<PerformTurn>()
     .each(
-      [checkAttacks = world.query<const MovePos, Hitpoints, const Team>()]
+      [ checkAttacks = world.query<const MovePos, Hitpoints, const Team>()
+      , checkDungeon = world.query<const dungeon::Dungeon>()
+      ]
       (flecs::entity entity, Action &a, Position &pos, MovePos &mpos, const MeleeDamage &dmg, const Team &team)
       {
-        Position nextPos = move_pos(pos, a.action);
+        Position nextPos{move(pos.v, a.action)};
         if (nextPos.v == pos.v)
         {
           mpos.v = nextPos.v;
@@ -81,6 +67,13 @@ flecs::entity register_systems(flecs::world& world)
               acts->curActions++;
           }
         });
+
+        checkDungeon.each([&](const dungeon::Dungeon& d)
+          {
+            if (!dungeon::is_tile_walkable(d, nextPos.v))
+              blocked = true;
+          });
+
         if (blocked)
           a.action = ActionType::NOP;
         else
@@ -93,7 +86,7 @@ flecs::entity register_systems(flecs::world& world)
     {
       pos.v = mpos.v;
     });
-  
+
   world.system<const Action, Hitpoints, const HitpointsRegen>("perform regen")
     .kind<PerformTurn>()
     .each(
@@ -102,7 +95,7 @@ flecs::entity register_systems(flecs::world& world)
         if (act.action == ActionType::REGEN)
           hp.hitpoints += regen.regenPerTurn;
       });
-  
+
   world.system<const Action, const HitpointsRegen>("perform heal")
     .kind<PerformTurn>()
     .term<ClosestVisibleAlly>(flecs::Wildcard)
@@ -134,7 +127,7 @@ flecs::entity register_systems(flecs::world& world)
         if (hp.hitpoints <= 0.f)
           entity.destruct();
       });
-  
+
   world.system<const Position, Hitpoints, MeleeDamage>()
     .kind<PerformTurn>()
     .each(
@@ -160,7 +153,7 @@ flecs::entity register_systems(flecs::world& world)
         });
       });
 
-  
+
   world.system<const Position, const Visibility, const Team>()
     .kind<PerformTurn>()
     .term<ClosestVisibleEnemy>(flecs::Wildcard).or_()
@@ -171,7 +164,7 @@ flecs::entity register_systems(flecs::world& world)
       {
         bool needsClosestEnemy = e.has<ClosestVisibleEnemy>(flecs::Wildcard);
         bool needsClosestAlly = e.has<ClosestVisibleAlly>(flecs::Wildcard);
-        
+
         float closestEnemyDist = 0;
         float closestAllyDist = 0;
         const auto noEntity = e.world().component<NoVisibleEntity>();
@@ -187,14 +180,14 @@ flecs::entity register_systems(flecs::world& world)
             auto dist = glm::length(glm::vec2(pos2.v - pos1.v));
             if (dist > vis.visibility)
               return;
-            
+
             if (needsClosestEnemy && team1.team != team2.team
               && (closestEnemy == noEntity || dist < closestEnemyDist))
             {
               closestEnemyDist = dist;
               closestEnemy = e2;
             }
-            
+
             if (needsClosestAlly && team1.team == team2.team
               && (closestAlly == noEntity || dist < closestAllyDist))
             {
@@ -209,6 +202,19 @@ flecs::entity register_systems(flecs::world& world)
         if (needsClosestEnemy)
           e.add<ClosestVisibleEnemy>(closestEnemy);
       });
+
+  world.system<flecs::query<const Position>, dungeon::dmaps::Dmap, dungeon::dmaps::PotentialHolder>()
+    .each([](flecs::entity e, flecs::query<const Position>& query, dungeon::dmaps::Dmap& dmap,
+      dungeon::dmaps::PotentialHolder& potential)
+    {
+      dungeon::dmaps::clear(dmap.view);
+      query.each(
+        [&](const Position& pos)
+        {
+          dmap.view(pos.v.y, pos.v.x) = 0;
+        });
+      dungeon::dmaps::generate(dmap.view, e.parent().get<dungeon::Dungeon>()->view, potential.potential);
+    });
 
   return world.pipeline()
     .term(flecs::System)

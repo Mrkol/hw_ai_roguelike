@@ -1,15 +1,17 @@
 #include "entityFactories.hpp"
 #include "components.hpp"
 #include "actions.hpp"
+#include "gameplay/dungeon/dmaps.hpp"
+#include "gameplay/dungeon/dungeon.hpp"
 #include <spdlog/fmt/fmt.h>
 
 
-flecs::entity create_monster(flecs::world& world, int x, int y)
+flecs::entity create_monster(flecs::world& world, glm::ivec2 pos)
 {
   return world.entity()
-    .set(Position{{x, y}})
-    .set(MovePos{{x, y}})
-    .set(PatrolPos{4, {x, y}})
+    .set(Position{pos})
+    .set(MovePos{pos})
+    .set(PatrolPos{4, pos})
     .set(Hitpoints{100.f})
     .set<Visibility>({6})
     .add<ClosestVisibleEnemy, NoVisibleEntity>()
@@ -21,11 +23,11 @@ flecs::entity create_monster(flecs::world& world, int x, int y)
     .set(MeleeDamage{10.f});
 }
 
-flecs::entity create_player(flecs::world& world, int x, int y)
+flecs::entity create_player(flecs::world& world, glm::ivec2 pos)
 {
   return world.entity("player")
-    .set(Position{{x, y}})
-    .set(MovePos{{x, y}})
+    .set(Position{pos})
+    .set(MovePos{pos})
     .set(Hitpoints{100.f})
     .set(HitpointsThresholds{50.f, 100.f})
     .set(Action{ActionType::NOP})
@@ -35,11 +37,11 @@ flecs::entity create_player(flecs::world& world, int x, int y)
     .set(MeleeDamage{10.f});
 }
 
-flecs::entity create_friend(flecs::world& world, int x, int y)
+flecs::entity create_friend(flecs::world& world, glm::ivec2 pos)
 {
   return world.entity()
-    .set(Position{{x, y}})
-    .set(MovePos{{x, y}})
+    .set(Position{pos})
+    .set(MovePos{pos})
     .set(Hitpoints{100.f})
     .set<Visibility>({6})
     .add<ClosestVisibleEnemy, NoVisibleEntity>()
@@ -52,18 +54,18 @@ flecs::entity create_friend(flecs::world& world, int x, int y)
     .set(MeleeDamage{10.f});
 }
 
-void create_heal(flecs::world& world, int x, int y, float amount)
+void create_heal(flecs::world& world, glm::ivec2 pos, float amount)
 {
   world.entity()
-    .set(Position{{x, y}})
+    .set(Position{pos})
     .set(HealAmount{amount})
     .set(Color{0xff4444ff});
 }
 
-void create_powerup(flecs::world& world, int x, int y, float amount)
+void create_powerup(flecs::world& world, glm::ivec2 pos, float amount)
 {
   world.entity()
-    .set(Position{{x, y}})
+    .set(Position{pos})
     .set(PowerupAmount{amount})
     .set(Color{0xff00ffff});
 }
@@ -84,4 +86,17 @@ flecs::entity create_patrool_route(flecs::world& world, std::string_view name,
   }
   prev.add<Waypoint>(first);
   return first;
+}
+
+flecs::entity create_dmap(flecs::world& world,
+  std::string_view name,
+  flecs::entity dungeon,
+  flecs::query<const Position> starting_points,
+  fu2::function<dungeon::dmaps::PotentialFuncSig> potential)
+{
+  return world.entity(std::string(name).c_str())
+    .set(std::move(starting_points))
+    .add(flecs::ChildOf, dungeon)
+    .set(dungeon::dmaps::PotentialHolder{std::move(potential)})
+    .set(dungeon::dmaps::make(dungeon.get<dungeon::Dungeon>()->view));
 }

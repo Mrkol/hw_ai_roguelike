@@ -16,7 +16,7 @@ StateMachineTracker::StateMachineTracker(
   world_.system<EventList>("event cache cleaner")
     .kind(postTransition)
     .each(
-      [](flecs::entity e, EventList& evts)
+      [](flecs::entity, EventList& evts)
       {
         evts.events.clear();
       });
